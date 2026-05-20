@@ -190,6 +190,7 @@ const RESULT_CATS=[
      {id:'def_int', label:'守備妨害（打者）', noDir:true},
      // ── 刺殺（走者がアウト・打席継続）──
      {id:'tag_out', label:'刺殺（走塁）', noDir:true, isAdvance:true},
+     {id:'caught_stealing', label:'盗塁死', noDir:true, isAdvance:true},
      // ── ダブルプレー（noDir）── 詳細はサブメニュー
      {id:'dp_643', label:'ゲッツー 6-4-3', noDir:true},
      {id:'dp_463', label:'ゲッツー 4-6-3', noDir:true},
@@ -379,8 +380,8 @@ function nextState(result,g){
   // ── 出塁（エラー）──
   } else if(r==='if_go_err'||r==='if_fly_err'||r==='of_fly_err'||r==='bunt_err'){
     addRun(advance(1)); runners.first=true; atEnd=true; balls=0; strikes=0;
-  // ── 刺殺（走者1人アウト・打席継続・カウント維持）──
-  } else if(r==='tag_out'){
+  // ── 刺殺・盗塁死（走者1人アウト・打席継続・カウント維持）──
+  } else if(r==='tag_out'||r==='caught_stealing'){
     outs++;
     // 走者を1人除去（1塁→2塁→3塁の順で代表的に）
     if(runners.first) runners.first=false;
@@ -2217,6 +2218,7 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
     {id:'swinging',label:'空振三振'},{id:'def_int',label:'守備妨害'},
     {id:'bunt_fly',label:'バントフライ'},{id:'safety_out',label:'セーフティ凡退'},
     {id:'tag_out', label:'刺殺(走塁)'},
+    {id:'caught_stealing', label:'盗塁死'},
   ];
   const HIT_ITEMS=[{id:'single',l:'単打'},{id:'double',l:'二塁打'},
     {id:'triple',l:'三塁打'},{id:'hr',l:'本塁打'}];
@@ -2244,6 +2246,17 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
     {id:'steal',l:'盗塁'},
     {id:'pb', l:'PB'},
     {id:'wp', l:'WP'},
+  ];
+  // ③ 作戦アイテム（盗塁/ディレード/エンドラン）
+  const TACTICS_ITEMS=[
+    {id:'steal',  l:'盗塁'},
+    {id:'delayed',l:'ディレード'},
+    {id:'hitrun', l:'エンドラン'},
+  ];
+  // 走塁系アウト
+  const TAGOUT_ITEMS=[
+    {id:'tag_out',         l:'刺殺'},
+    {id:'caught_stealing', l:'盗塁死'},
   ];
 
   const bigBtn=(color, bgDim, label, sub, onClick)=>(
@@ -2322,13 +2335,14 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
           ()=>setSubMenu(s=>s==='out'?null:'out'))}
       </div>
 
-      {subMenu==='out' && renderSub(OUT_ITEMS, '#ef4444', it=>it.label)}
-      {subMenu==='hit' && renderSub(HIT_ITEMS, '#60a5fa', it=>it.l)}
-      {subMenu==='reached'&& renderSub(REACHED_ITEMS,'#14b8a6', it=>it.l)}
-      {subMenu==='sac' && renderSub(SAC_ITEMS, '#a78bfa', it=>it.l)}
-      {subMenu==='int' && renderSub(INT_ITEMS, '#f43f5e', it=>it.l)}
-      {subMenu==='dp' && renderSub(DP_ITEMS, '#dc2626', it=>it.l)}
-      {subMenu==='adv' && renderSub(ADV_ITEMS, '#06b6d4', it=>it.l)}
+      {subMenu==='out'     && renderSub(OUT_ITEMS,     '#ef4444', it=>it.label)}
+      {subMenu==='hit'     && renderSub(HIT_ITEMS,     '#60a5fa', it=>it.l)}
+      {subMenu==='reached' && renderSub(REACHED_ITEMS, '#14b8a6', it=>it.l)}
+      {subMenu==='sac'     && renderSub(SAC_ITEMS,     '#a78bfa', it=>it.l)}
+      {subMenu==='int'     && renderSub(INT_ITEMS,     '#f43f5e', it=>it.l)}
+      {subMenu==='dp'      && renderSub(DP_ITEMS,      '#dc2626', it=>it.l)}
+      {subMenu==='adv'     && renderSub(ADV_ITEMS,     '#06b6d4', it=>it.l)}
+      {subMenu==='tactics' && renderSub(TACTICS_ITEMS, '#67e8f9', it=>it.l)}
 
       {/* 2次クイックボタン */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:4}}>
@@ -2338,16 +2352,21 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
         {subBtn('四球','#22c55e',()=>onSelect('walk'))}
         {subBtn('死球','#ec4899',()=>onSelect('hbp'))}
       </div>
-      {/* 3次ボタン: 出塁・進塁・犠打飛・ゲッツー・妨害 */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4}}>
+      {/* 3次ボタン: 出塁・進塁・作戦・犠打飛 (5列1段目) */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:4}}>
         {subBtn(subMenu==='reached'?'出塁 ▲':'出塁 ▼','#14b8a6',
           ()=>setSubMenu(s=>s==='reached'?null:'reached'))}
         {subBtn(subMenu==='adv'?'進塁 ▲':'進塁 ▼','#06b6d4',
           ()=>setSubMenu(s=>s==='adv'?null:'adv'))}
+        {subBtn(subMenu==='tactics'?'作戦 ▲':'作戦 ▼','#67e8f9',
+          ()=>setSubMenu(s=>s==='tactics'?null:'tactics'))}
         {subBtn(subMenu==='sac'?'犠打飛 ▲':'犠打飛 ▼','#a78bfa',
           ()=>setSubMenu(s=>s==='sac'?null:'sac'))}
         {subBtn(subMenu==='dp'?'ゲッツー ▲':'ゲッツー ▼','#dc2626',
           ()=>setSubMenu(s=>s==='dp'?null:'dp'))}
+      </div>
+      {/* 4次ボタン: 妨害 (単独) */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4}}>
         {subBtn(subMenu==='int'?'妨害 ▲':'妨害 ▼','#f43f5e',
           ()=>setSubMenu(s=>s==='int'?null:'int'))}
       </div>
@@ -3202,6 +3221,51 @@ function ShareScreen({game,pitches,onBack}){
   const qrRef=useRef(null);
   const [pdfProgress,setPdfProgress]=useState('');
   const [shareMsg,setShareMsg]=useState('');
+
+  // ④ 途中経過JSONエクスポート
+  const exportGameJSON=()=>{
+    const data={
+      version:'pro-1',
+      exportedAt:Date.now(),
+      game,
+      pitches,
+    };
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    const safeName=(game.name||'試合').replace(/[\\/:*?"<>|]/g,'_');
+    a.download=`配球データ_${safeName}_${(game.date||new Date().toISOString().slice(0,10))}.json`;
+    a.click();
+    setShareMsg('JSONファイルをダウンロードしました');
+    setTimeout(()=>setShareMsg(''),2500);
+  };
+
+  // ④ Web Share APIで共有(モバイル: LINE等のアプリに直接送信可能)
+  const shareGameJSON=async()=>{
+    const data={
+      version:'pro-1',
+      exportedAt:Date.now(),
+      game,
+      pitches,
+    };
+    const json=JSON.stringify(data,null,2);
+    const safeName=(game.name||'試合').replace(/[\\/:*?"<>|]/g,'_');
+    const fname=`配球データ_${safeName}.json`;
+    try{
+      const file=new File([json],fname,{type:'application/json'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        await navigator.share({files:[file],title:`配球データ ${safeName}`});
+        setShareMsg('共有しました');
+      } else {
+        // フォールバック: ダウンロード
+        exportGameJSON();
+        return;
+      }
+    }catch(e){
+      if(e.name!=='AbortError') setShareMsg('共有失敗');
+    }
+    setTimeout(()=>setShareMsg(''),2500);
+  };
   useEffect(()=>{
     if(qrRef.current){
       qrRef.current.innerHTML='';
@@ -3343,6 +3407,33 @@ function ShareScreen({game,pitches,onBack}){
           onClick={exportPDF} disabled={!!pdfProgress}>
           {pdfProgress||' PDFレポート生成'}
         </button>
+      </div>
+
+      {/* ④ 途中経過の共有(JSON送受信) */}
+      <div className="card" style={{marginBottom:12,
+        background:'rgba(168,85,247,.08)',border:'1px solid rgba(168,85,247,.35)'}}>
+        <div style={{fontSize:13,fontWeight:700,color:'#c084fc',marginBottom:6}}>
+          途中経過を他の人に渡す(JSONファイル)
+        </div>
+        <div style={{fontSize:11,color:'#94a3b8',marginBottom:10,lineHeight:1.5}}>
+          試合データをJSONファイルで送信。受け取った人はホーム画面の「JSON取込」から
+          インポートして続きを記録できます。
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+          <button onClick={shareGameJSON} className="btn btn-primary"
+            style={{padding:'10px',fontWeight:700}}>
+            ファイル共有
+          </button>
+          <button onClick={exportGameJSON} className="btn btn-secondary"
+            style={{padding:'10px',fontWeight:700}}>
+            ダウンロード
+          </button>
+        </div>
+        <div style={{fontSize:9,color:'#64748b',marginTop:8,padding:6,
+          background:'#0f172a',borderRadius:5}}>
+          試合データ・全投球・スタメン情報を含みます。受け取った人が「JSON取込」で読み込めば
+          そのまま続きを記録可能。
+        </div>
       </div>
 
       {/* ① QRコード（アプリURL） */}
@@ -4032,7 +4123,7 @@ function PitcherDetailPanel({allPitches, pitcherName}){
     .sort((a,b)=>(all.ptC[b.id]||0)-(all.ptC[a.id]||0));
   // 6球種までに絞る（モバイル横幅対策）
   const showPts=usedPtIds.slice(0,6);
-  const activeCounts=countOrder.filter(c=>(all.countPtMix[c]?.t||0)>=2);
+  const activeCounts=countOrder; // ① 12カウント全て常時表示
 
   const countCard=(
     <div className="card" style={{marginBottom:10}}>
@@ -4093,7 +4184,7 @@ function PitcherDetailPanel({allPitches, pitcherName}){
         </table>
       </div>
       <div style={{fontSize:9,color:'#64748b',marginTop:4}}>
-        ※ 黄色背景=50%超え / 2球未満のカウントは非表示 / 上位6球種
+        ※ 黄色背景=50%超え / 全12カウント表示 / 上位6球種
       </div>
     </div>
   );
@@ -4113,9 +4204,6 @@ function PitcherDetailPanel({allPitches, pitcherName}){
 
       {/* ── 球種別 MAX/平均球速 ── */}
       <PitchSpeedCard pitches={mine}/>
-
-      {/* 追加候補③ イニング別球速推移 */}
-      <InningSpeedCard pitches={mine}/>
 
       {/* ── 走者状況別の球種割合 ── */}
       <RunnerSituationCard pitches={mine} groups={byRunner}/>
@@ -5541,7 +5629,7 @@ function HistoryScreen({pitches,onBack,onPitchEdit}){
             // 作戦/進塁イベント判定
             const isAdv=p.isAdvance;
             const opacity=p.isPickoff?0.65:(isAdv?0.75:1);
-            const advLabels={steal:'盗塁',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',tag_out:'刺殺'};
+            const advLabels={steal:'盗塁',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',tag_out:'刺殺',caught_stealing:'盗塁死'};
             return (
               <div key={p.id} className="history-item" style={{opacity}}>
                 <span style={{fontSize:12,color:'#475569',width:22,flexShrink:0,textAlign:'center'}}>{sorted.length-i}</span>
@@ -5803,7 +5891,8 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate}){
     const speedNum=currentSpeed?parseInt(currentSpeed,10):null;
     // 進塁・刺殺・作戦イベントは投球扱いしない（球数加算しない・pt保存しない）
     const isAdvance = result==='steal'||result==='delayed'||result==='hitrun'||
-                      result==='pb'||result==='wp'||result==='tag_out';
+                      result==='pb'||result==='wp'||result==='tag_out'||
+                      result==='caught_stealing';
     const pitch={
       id:genId(),gid:game.id,
       pt:isAdvance?null:pt,
@@ -5931,9 +6020,40 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate}){
     setPZone(null);setPPt(null);setPResult(null);setStep('zone');
   },[undoStack,gs,game]);
 
-  const recordPickoff=useCallback(async()=>{
+  // ⑥ 牽制セーフ/牽制死の選択モーダル制御
+  const [showPickoff,setShowPickoff]=useState(false);
+
+  const recordPickoff=useCallback(async(outcome='safe')=>{
+    // outcome: 'safe'(セーフ) | 'out'(牽制死)
+    let newGs=gs;
+    if(outcome==='out'){
+      // 牽制死: アウト1追加 + 走者1人除去
+      let outs=(gs.outs||0)+1;
+      let runners={...gs.runners};
+      // どの走者か手動指定はせず、1塁→2塁→3塁の順で除去
+      if(runners.first) runners.first=false;
+      else if(runners.second) runners.second=false;
+      else if(runners.third) runners.third=false;
+      let inning=gs.inning, topBottom=gs.topBottom;
+      let count={...gs.count};
+      let currentAtBat=gs.currentAtBat;
+      let currentBatterOrder=gs.currentBatterOrder;
+      // 3アウトで攻守交替
+      if(outs>=3){
+        outs=0;
+        runners={first:false,second:false,third:false};
+        count={balls:0,strikes:0};
+        currentAtBat=genId();
+        if(topBottom==='top') topBottom='bottom';
+        else { topBottom='top'; inning++; }
+      }
+      newGs={...gs,outs,runners,inning,topBottom,count,currentAtBat,currentBatterOrder};
+    }
     const pitch={
-      id:genId(),gid:game.id,pt:null,zone:null,result:'pickoff',dir:null,
+      id:genId(),gid:game.id,pt:null,zone:null,
+      result:outcome==='out'?'pickoff_out':'pickoff',
+      dir:null,
+      pickoffOutcome:outcome,
       batter:activeBatter?.name||'',bh,
       pitcher:currentPitcher?.name||'',pitcherNum:currentPitcher?.number||'',
       pitcherHand:currentPitcher?.hand||'R',
@@ -5947,8 +6067,13 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate}){
     };
     await dbPut('pitches',pitch);
     setUndoStack(s=>[...s.slice(-49),{gs:{...gs},pitchId:pitch.id}]);
+    if(outcome==='out'){
+      setGs(newGs);
+      await dbPut('games',{...game,gs:newGs});
+    }
     refreshPitches();
-  },[gs,game,activeBatter,bh,currentPitcher]);
+    setShowPickoff(false);
+  },[gs,game,activeBatter,bh,currentPitcher,setGs]);
 
   const handleSubstitution=useCallback(async(sub)=>{
     let g={...game};
@@ -6031,26 +6156,26 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate}){
       onTouchStart={e=>{touchX.current=e.touches[0].clientX;}}
       onTouchEnd={e=>{if(touchX.current!==null&&e.changedTouches[0].clientX-touchX.current>80)undo();touchX.current=null;}}>
 
-      {/* ⑦ 左サイドバー縦ナビ */}
-      <div style={{display:'flex',flexDirection:'column',gap:3,
-        width:50,flexShrink:0,padding:'2px',background:'#0c1322',borderRadius:8,
+      {/* ⑦ 左サイドバー縦ナビ - 大型化 */}
+      <div style={{display:'flex',flexDirection:'column',gap:4,
+        width:62,flexShrink:0,padding:'4px',background:'#0c1322',borderRadius:10,
         border:'1px solid #1e293b',alignSelf:'flex-start',position:'sticky',top:4}}>
         {navItems.map(it=>(
           <button key={it.key} onClick={it.onClick} disabled={it.disabled}
             style={{
               display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-              padding:'5px 0',borderRadius:6,
-              border:`1px solid ${it.active?'#3b82f6':'transparent'}`,
-              background:it.active?'rgba(59,130,246,.2)':'transparent',
-              color:it.disabled?'#475569':(it.active?'#93c5fd':'#cbd5e1'),
-              fontSize:9,fontWeight:700,
+              padding:'10px 2px',borderRadius:7,
+              border:`1.5px solid ${it.active?'#3b82f6':'#1e293b'}`,
+              background:it.active?'rgba(59,130,246,.2)':'rgba(15,23,42,.5)',
+              color:it.disabled?'#475569':(it.active?'#93c5fd':'#e2e8f0'),
+              fontWeight:800,
               cursor:it.disabled?'not-allowed':'pointer',
               fontFamily:'inherit',
               opacity:it.disabled?0.4:1,
-              minHeight:0,lineHeight:1.1,
+              minHeight:42,lineHeight:1.1,
             }}>
-            {it.icon&&<span style={{fontSize:14,marginBottom:1}}>{it.icon}</span>}
-            <span style={{fontSize:10}}>{it.label}</span>
+            {it.icon&&<span style={{fontSize:15,marginBottom:2}}>{it.icon}</span>}
+            <span style={{fontSize:12,fontWeight:800}}>{it.label}</span>
           </button>
         ))}
       </div>
@@ -6089,37 +6214,49 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate}){
         </div>
       )}
 
-      {/* State card - スマホ縦圧縮 */}
+      {/* State card - スマホ縦圧縮 (打者切替は独立行に) */}
       <div className="card" style={{marginBottom:6,padding:'6px 8px'}}>
+        {/* 1行目: カウント・ベース・打者情報(コンパクト) */}
         <div style={{display:'flex',alignItems:'center',gap:6,justifyContent:'space-between'}}>
           <CountDisplay gs={gs} onGsChange={updateGsManually}/>
           <BaseDiamond runners={gs.runners} onRunnersChange={r=>updateGsManually({...gs,runners:r})}/>
-          <div style={{textAlign:'center',minWidth:80}}>
+          <div style={{textAlign:'right',minWidth:60,maxWidth:90,flexShrink:1}}>
             <div style={{fontSize:9,color:'#64748b',lineHeight:1,marginBottom:2}}>
-              {gs.currentBatterOrder||1}番打者
+              {gs.currentBatterOrder||1}番 {bh}打 #{activeBatter?.number||'-'}
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'center'}}>
-              <button onClick={()=>navBatter(-1)}
-                style={{padding:'4px 6px',borderRadius:5,border:'1px solid #475569',
-                  background:'#0f172a',color:'#94a3b8',fontSize:11,fontWeight:700,
-                  cursor:'pointer',fontFamily:'inherit'}}
-                title="前打者">←</button>
-              <div style={{minWidth:50}}>
-                <div style={{fontSize:13,fontWeight:700,lineHeight:1.1,
-                  overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                  {activeBatter?.name||'-'}
-                </div>
-                <div style={{fontSize:9,color:'#94a3b8',lineHeight:1}}>{bh}打 #{activeBatter?.number||'-'}</div>
-              </div>
-              <button onClick={()=>navBatter(1)}
-                style={{padding:'4px 6px',borderRadius:5,border:'1px solid #475569',
-                  background:'#0f172a',color:'#94a3b8',fontSize:11,fontWeight:700,
-                  cursor:'pointer',fontFamily:'inherit'}}
-                title="次打者">→</button>
+            <div style={{fontSize:13,fontWeight:700,lineHeight:1.1,
+              overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+              {activeBatter?.name||'-'}
             </div>
           </div>
         </div>
-        <div style={{display:'flex',gap:6,marginTop:5,alignItems:'center'}}>
+        {/* 2行目: 打者切替(画面幅一杯使う独立行・他要素と重ならない) */}
+        <div style={{display:'flex',alignItems:'center',gap:4,marginTop:5}}>
+          <button onClick={()=>navBatter(-1)}
+            style={{flex:1,padding:'6px 4px',borderRadius:6,
+              border:'1px solid #475569',background:'#0f172a',color:'#cbd5e1',
+              fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+              display:'flex',alignItems:'center',justifyContent:'center',gap:4}}>
+            <span style={{fontSize:14}}>←</span>
+            <span>前打者</span>
+          </button>
+          <div style={{flex:'0 0 auto',padding:'4px 8px',
+            background:'rgba(59,130,246,.1)',borderRadius:6,
+            border:'1px solid rgba(59,130,246,.3)',
+            fontSize:10,color:'#94a3b8',textAlign:'center',whiteSpace:'nowrap'}}>
+            <span style={{fontSize:13,fontWeight:800,color:'#93c5fd'}}>{gs.currentBatterOrder||1}</span>
+            <span style={{fontSize:9}}>番</span>
+          </div>
+          <button onClick={()=>navBatter(1)}
+            style={{flex:1,padding:'6px 4px',borderRadius:6,
+              border:'1px solid #475569',background:'#0f172a',color:'#cbd5e1',
+              fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+              display:'flex',alignItems:'center',justifyContent:'center',gap:4}}>
+            <span>次打者</span>
+            <span style={{fontSize:14}}>→</span>
+          </button>
+        </div>
+        <div style={{display:'flex',gap:6,marginTop:4,alignItems:'center'}}>
           <span style={{fontSize:10,color:'#64748b'}}>総球: {gs.pitchCount||0}</span>
         </div>
       </div>
@@ -6179,8 +6316,8 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate}){
             <button className="btn btn-sm"
               style={{flex:1,fontSize:11,padding:'8px',background:'rgba(59,130,246,.15)',
                 border:'1px solid #3b82f6',color:'#93c5fd',borderRadius:6,fontWeight:700}}
-              onClick={recordPickoff}>
-               牽制
+              onClick={()=>setShowPickoff(true)}>
+              牽制
             </button>
             <button className="btn btn-secondary btn-sm"
               style={{flex:1,fontSize:11,padding:'8px',fontWeight:700}}
@@ -6235,7 +6372,7 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate}){
                 <button className="btn btn-sm"
                   style={{fontSize:10,padding:'3px 8px',background:'rgba(59,130,246,.15)',
                     border:'1px solid #3b82f6',color:'#93c5fd',borderRadius:5}}
-                  onClick={recordPickoff}>牽制</button>
+                  onClick={()=>setShowPickoff(true)}>牽制</button>
                 <button className="btn btn-secondary btn-sm"
                   style={{fontSize:10,padding:'3px 8px'}}
                   onClick={()=>setShowSub(true)}>交代</button>
@@ -6393,6 +6530,38 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate}){
           onConfirm={handleSubstitution}
           onClose={()=>setShowSub(false)}
         />
+      )}
+      {/* ⑥ 牽制セーフ/牽制死 選択モーダル */}
+      {showPickoff&&(
+        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setShowPickoff(false)}}>
+          <div className="modal" style={{maxWidth:340}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <h3 style={{fontSize:16}}>牽制プレー</h3>
+              <button className="btn btn-secondary btn-sm" onClick={()=>setShowPickoff(false)}>×</button>
+            </div>
+            <div style={{fontSize:12,color:'#94a3b8',marginBottom:14,textAlign:'center'}}>
+              牽制プレーの結果を選択してください
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              <button onClick={()=>recordPickoff('safe')}
+                style={{padding:'18px 4px',borderRadius:10,
+                  border:'2px solid #22c55e',background:'rgba(34,197,94,.12)',
+                  color:'#4ade80',fontSize:16,fontWeight:900,cursor:'pointer',
+                  fontFamily:'inherit',lineHeight:1.1}}>
+                セーフ
+                <div style={{fontSize:9,opacity:.8,marginTop:3,fontWeight:600}}>状態変化なし</div>
+              </button>
+              <button onClick={()=>recordPickoff('out')}
+                style={{padding:'18px 4px',borderRadius:10,
+                  border:'2px solid #ef4444',background:'rgba(239,68,68,.12)',
+                  color:'#fca5a5',fontSize:16,fontWeight:900,cursor:'pointer',
+                  fontFamily:'inherit',lineHeight:1.1}}>
+                牽制死
+                <div style={{fontSize:9,opacity:.8,marginTop:3,fontWeight:600}}>+1アウト・走者除去</div>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {voiceToast&&(
         <div className="toast"> {voiceToast}</div>
@@ -6706,15 +6875,63 @@ function HomeScreen({onSelect,onCreate}){
          &nbsp;試合の入力を始める
       </button>
 
-      {/* スマホでアプリ化 */}
-      <button
-        onClick={()=>setShowMobile(true)}
-        style={{width:'100%',padding:'12px',fontSize:13,fontWeight:700,
-          borderRadius:10,marginBottom:24,
-          background:'#1e293b',border:'1px solid #334155',color:'#cbd5e1',
-          cursor:'pointer',fontFamily:'inherit'}}>
-         スマホでアプリ化する手順
-      </button>
+      {/* スマホでアプリ化 + JSON取込 (2列) */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:24}}>
+        <button
+          onClick={()=>setShowMobile(true)}
+          style={{padding:'12px 4px',fontSize:12,fontWeight:700,
+            borderRadius:10,
+            background:'#1e293b',border:'1px solid #334155',color:'#cbd5e1',
+            cursor:'pointer',fontFamily:'inherit'}}>
+          スマホアプリ化
+        </button>
+        {/* ④ JSON取込ボタン */}
+        <button
+          onClick={()=>{
+            const input=document.createElement('input');
+            input.type='file';
+            input.accept='.json,application/json';
+            input.onchange=async e=>{
+              const file=e.target.files?.[0];
+              if(!file) return;
+              try{
+                const txt=await file.text();
+                const data=JSON.parse(txt);
+                if(!data.game||!Array.isArray(data.pitches)){
+                  alert('対応していないJSONファイルです');
+                  return;
+                }
+                const existing=await dbGetAll('games');
+                const isUpdate=existing.find(g=>g.id===data.game.id);
+                const ok=confirm(
+                  isUpdate
+                    ?`同じID の試合が既にあります。\n上書きしますか？\n\n試合: ${data.game.name||'名称未設定'}\n投球数: ${data.pitches.length}`
+                    :`試合データを取り込みますか？\n\n試合: ${data.game.name||'名称未設定'}\n投球数: ${data.pitches.length}`
+                );
+                if(!ok) return;
+                // 既存のpitches削除→新規挿入
+                if(isUpdate){
+                  const oldPs=await dbGetByIdx('pitches','gid',data.game.id);
+                  for(const p of oldPs) await dbDel('pitches',p.id);
+                }
+                await dbPut('games',data.game);
+                for(const p of data.pitches) await dbPut('pitches',p);
+                const newGames=await dbGetAll('games');
+                setGames([...newGames].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)));
+                alert(`取込完了\n${data.pitches.length}球のデータを読み込みました`);
+              }catch(err){
+                alert('JSON取込エラー: '+err.message);
+              }
+            };
+            input.click();
+          }}
+          style={{padding:'12px 4px',fontSize:12,fontWeight:700,
+            borderRadius:10,
+            background:'rgba(168,85,247,.12)',border:'1px solid rgba(168,85,247,.4)',
+            color:'#c084fc',cursor:'pointer',fontFamily:'inherit'}}>
+          JSON取込(共有受信)
+        </button>
+      </div>
 
       {showMobile&&<MobileSetupModal onClose={()=>setShowMobile(false)}/>}
 
