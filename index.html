@@ -181,6 +181,7 @@ const RESULT_CATS=[
      {id:'single_adv2', label:'単打(走者2進塁)'},
      {id:'single_adv3', label:'単打(走者3進塁)'},
      {id:'double', label:'二塁打'},
+     {id:'double_adv', label:'二塁打(走者+1)'},
      {id:'triple', label:'三塁打'},
      {id:'hr', label:'本塁打'},
    ]},
@@ -371,6 +372,8 @@ function nextState(result,g,extra={}){
     addRun(advance(3)); runners.first=true; atEnd=true; balls=0; strikes=0;
   } else if(r==='double'){
     addRun(advance(2)); runners.second=true; atEnd=true; balls=0; strikes=0;
+  } else if(r==='double_adv'){
+    addRun(advance(3)); runners.second=true; atEnd=true; balls=0; strikes=0;
   } else if(r==='triple'){
     addRun(advance(3)); runners.third=true; atEnd=true; balls=0; strikes=0;
   } else if(r==='hr'){
@@ -503,7 +506,7 @@ function getBatterStats(pitches, batterName){
     if(!abMap[p.atBat])abMap[p.atBat]={id:p.atBat,pitches:[],result:null,inning:p.inning,tb:p.topBottom};
     abMap[p.atBat].pitches.push(p);
   });
-  const ABS=['walk','hbp','single','double','triple','hr','looking','swinging',
+  const ABS=['walk','hbp','single','double','double_adv','triple','hr','looking','swinging',
     'if_go','if_fly','of_fly','if_liner','of_liner','bunt_fly','safety_out',
     'sac_bunt','sac_fly','bat_int','def_int'];
   Object.values(abMap).forEach(ab=>{
@@ -534,7 +537,7 @@ function getBatterStats(pitches, batterName){
   return {
     abs:ab,
     abCount:ab.filter(a=>a.result).length,
-    hits:ab.filter(a=>['single','double','triple','hr'].includes(a.result)).length,
+    hits:ab.filter(a=>['single','double','double_adv','triple','hr'].includes(a.result)).length,
     so:ab.filter(a=>['looking','swinging'].includes(a.result)).length,
     bb:ab.filter(a=>['walk','hbp'].includes(a.result)).length,
     zone, vs, pitches:ps,
@@ -586,7 +589,7 @@ function getMatchupStats(pitches, pitcherName, batterName){
     if(!abMap[p.atBat])abMap[p.atBat]={id:p.atBat,pitches:[],result:null,inning:p.inning,tb:p.topBottom};
     abMap[p.atBat].pitches.push(p);
   });
-  const ABS=['walk','hbp','single','double','triple','hr','looking','swinging',
+  const ABS=['walk','hbp','single','double','double_adv','triple','hr','looking','swinging',
     'if_go','if_fly','of_fly','if_liner','of_liner','bunt_fly','safety_out',
     'sac_bunt','sac_fly','bat_int','def_int'];
   Object.values(abMap).forEach(ab=>{
@@ -597,7 +600,7 @@ function getMatchupStats(pitches, pitcherName, batterName){
   const speeds=m.map(p=>p.speed).filter(s=>s>0);
   const avgSpeed=speeds.length>0?Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length):null;
   const abs=Object.values(abMap).sort((a,b)=>a.pitches[0].timestamp-b.pitches[0].timestamp);
-  const hits=abs.filter(a=>['single','double','triple','hr'].includes(a.result)).length;
+  const hits=abs.filter(a=>['single','double','double_adv','triple','hr'].includes(a.result)).length;
   const so=abs.filter(a=>['looking','swinging'].includes(a.result)).length;
   const bb=abs.filter(a=>['walk','hbp'].includes(a.result)).length;
   const abCount=abs.filter(a=>a.result).length;
@@ -1643,7 +1646,7 @@ function BatterScoutingCard({pitches, batterName, batterHand, atBatPitches}){
           <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
             {recentABs.map((a,i)=>{
               const r=a.result;
-              const isHit=['single','double','triple','hr'].includes(r);
+              const isHit=['single','double','double_adv','triple','hr'].includes(r);
               const isSO=['looking','swinging'].includes(r);
               return (
                 <span key={i} style={{
@@ -1938,8 +1941,8 @@ function SpeedEditor({value, onChange}){
   const display=value||'–––';
   const numVal=value?parseInt(value,10):null;
   const valid=numVal!=null&&numVal>=60&&numVal<=180;
-  const padBtnStyle={padding:'3px 0',borderRadius:5,border:'1px solid #475569',
-    background:'#0f172a',color:'#e2e8f0',fontSize:13,fontWeight:800,
+  const padBtnStyle={padding:'10px 0',borderRadius:6,border:'1px solid #475569',
+    background:'#0f172a',color:'#e2e8f0',fontSize:18,fontWeight:800,
     cursor:'pointer',fontFamily:'inherit',userSelect:'none',minHeight:0};
   return (
     <div style={{padding:'4px',background:'#1e293b',borderRadius:7,
@@ -2301,8 +2304,9 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
     {id:'single',      l:'単打',         color:'#60a5fa',bg:'#0c1a2e'},
     {id:'single_adv2', l:'単打(走者+2)', color:'#93c5fd',bg:'#0c1a2e'},
     {id:'single_adv3', l:'単打(走者+3)', color:'#bfdbfe',bg:'#0c1522'},
-    {id:'double',      l:'二塁打',       color:'#38bdf8',bg:'#0c1a2e'},
-    {id:'triple',      l:'三塁打',       color:'#22d3ee',bg:'#021a1e'},
+    {id:'double',      l:'二塁打',         color:'#38bdf8',bg:'#0c1a2e'},
+    {id:'double_adv',  l:'二塁打(走者+1)', color:'#7dd3fc',bg:'#0c1a2e'},
+    {id:'triple',      l:'三塁打',         color:'#22d3ee',bg:'#021a1e'},
     {id:'hr',          l:'本塁打',       color:'#f97316',bg:'#3b1506'},
   ];
   const REACHED_CHOICES=[
@@ -2397,8 +2401,8 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
   );
   const subBtn=(label,color,onClick)=>(
     <button onClick={onClick}
-      style={{padding:'6px 2px',borderRadius:6,border:`1.5px solid ${color}`,
-        background:'transparent',color:color,fontSize:10,fontWeight:700,
+      style={{padding:'12px 4px',borderRadius:8,border:`2px solid ${color}`,
+        background:`${color}14`,color:color,fontSize:13,fontWeight:800,
         cursor:'pointer',fontFamily:'inherit',lineHeight:1.2}}>
       {label}
     </button>
@@ -2447,17 +2451,17 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
         {bigBtn('#ec4899','#1f0513','死球','打席終了',()=>onSelect('hbp'))}
       </div>
 
-      {/* Row3: 出塁 / 進塁 / 作戦 / 犠打飛 / ゲッツー */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:4}}>
+      {/* Row3: 出塁 / 進塁 / 作戦 */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:4,marginBottom:4}}>
         {subBtn('出塁','#14b8a6',()=>setFullStep('reached'))}
         {subBtn('進塁','#06b6d4',()=>setFullStep('adv'))}
         {subBtn('作戦','#67e8f9',()=>setFullStep('tactics'))}
-        {subBtn('犠打飛','#a78bfa',()=>setFullStep('sac'))}
-        {subBtn('ゲッツー','#dc2626',()=>setFullStep('dp'))}
       </div>
 
-      {/* Row4: 妨害 */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4}}>
+      {/* Row4: 犠打飛 / ゲッツー / 妨害 */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:4}}>
+        {subBtn('犠打飛','#a78bfa',()=>setFullStep('sac'))}
+        {subBtn('ゲッツー','#dc2626',()=>setFullStep('dp'))}
         {subBtn('妨害','#f43f5e',()=>setFullStep('int'))}
       </div>
     </div>
@@ -3611,7 +3615,7 @@ function BatterDetailPanel({allPitches, batterName, game}){
       if(!a.result) return;
       r.ab++;
       if(a.result==='single') r.h++;
-      else if(a.result==='double'){r.h++;r.db++;}
+      else if(a.result==='double'||a.result==='double_adv'){r.h++;r.db++;}
       else if(a.result==='triple'){r.h++;r.tr++;}
       else if(a.result==='hr'){r.h++;r.hr++;}
       else if(['looking','swinging'].includes(a.result)) r.so++;
@@ -3662,7 +3666,7 @@ function BatterDetailPanel({allPitches, batterName, game}){
       const pname=a.pitches[0]?.pitcher;
       if(!pname||!m[pname]||!a.result) return;
       m[pname].ab++;
-      if(['single','double','triple','hr'].includes(a.result)) m[pname].h++;
+      if(['single','double','double_adv','triple','hr'].includes(a.result)) m[pname].h++;
       if(['looking','swinging'].includes(a.result)) m[pname].so++;
       if(['walk','hbp'].includes(a.result)) m[pname].bb++;
     });
@@ -3856,7 +3860,7 @@ function BatterDetailPanel({allPitches, batterName, game}){
         <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
           {stats.abs.filter(a=>a.result).map((a,i)=>{
             const r=ALL_RESULTS.find(x=>x.id===a.result)?.label||a.result;
-            const isHit=['single','double','triple','hr'].includes(a.result);
+            const isHit=['single','double','double_adv','triple','hr'].includes(a.result);
             const isSO=['looking','swinging'].includes(a.result);
             const isBB=['walk','hbp'].includes(a.result);
             const color=isHit?'#60a5fa':isSO?'#ef4444':isBB?'#f97316':'#94a3b8';
@@ -5227,7 +5231,7 @@ function AnalysisScreen({game,pitches,onBack}){
         if(!abMap[p.atBat])abMap[p.atBat]=[];
         abMap[p.atBat].push(p);
       });
-      const ABS=['walk','hbp','single','double','triple','hr','looking','swinging',
+      const ABS=['walk','hbp','single','double','double_adv','triple','hr','looking','swinging',
         'if_go','if_fly','of_fly','if_liner','of_liner','bunt_fly','safety_out',
         'sac_bunt','sac_fly','bat_int','def_int',
         'if_go_err','if_fly_err','of_fly_err','bunt_err',
@@ -5237,7 +5241,7 @@ function AnalysisScreen({game,pitches,onBack}){
         const last=ab[ab.length-1];
         if(last && ABS.includes(last.result)){
           abCount++;
-          if(['single','double','triple','hr'].includes(last.result)) hits++;
+          if(['single','double','double_adv','triple','hr'].includes(last.result)) hits++;
           if(['looking','swinging','dp_so_steal'].includes(last.result)) so++;
           if(['walk','hbp'].includes(last.result)) bb++;
         }
@@ -5862,7 +5866,7 @@ function HistoryScreen({pitches,onBack,onPitchEdit,undoStack,onUndo}){
       m[k].pitches.push(p);
     });
     // 打席結果(last pitch)を判定
-    const ABS=['walk','hbp','single','double','triple','hr','looking','swinging',
+    const ABS=['walk','hbp','single','double','double_adv','triple','hr','looking','swinging',
       'if_go','if_fly','of_fly','if_liner','of_liner','bunt_fly','safety_out',
       'sac_bunt','sac_fly','bat_int','def_int',
       'if_go_err','if_fly_err','of_fly_err','bunt_err',
