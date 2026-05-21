@@ -7004,7 +7004,7 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
         </div>
       )}
 
-      {/* ── 球速エディタ: ゾーン選択後・球種選択ステップでのみ表示（結果ステップでは非表示で省スペース） ── */}
+      {/* ── 球速エディタ: ゾーン選択後・球種選択ステップでのみ表示 ── */}
       {pZone && step==='pt' && (
         <SpeedEditor value={currentSpeed} onChange={setCurrentSpeed} compact={true}/>
       )}
@@ -7138,7 +7138,7 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
         </div>
       )}
 
-      {/* Step: pt - スマホ縦圧縮 */}
+      {/* Step: pt */}
       {step==='pt'&&(
         <div className="card" style={{padding:'8px'}}>
           <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
@@ -7149,8 +7149,8 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
             {PT.map(p=>(
               <button key={p.id}
                 onClick={()=>{setPPt(p.id);setStep('result');}}
-                style={{padding:'10px 2px',borderRadius:7,border:`2px solid ${p.color}`,
-                  background:'#0f172a',color:p.color,fontSize:11,fontWeight:700,cursor:'pointer',
+                style={{padding:'13px 2px',borderRadius:7,border:`2px solid ${p.color}`,
+                  background:'#0f172a',color:p.color,fontSize:13,fontWeight:700,cursor:'pointer',
                   transition:'all .1s',fontFamily:'inherit'}}>
                 {p.label}
               </button>
@@ -7964,7 +7964,7 @@ function LanAccessCard(){
 }
 
 // ── Home Screen (画面A) ──
-function HomeScreen({onSelect,onCreate,onCrossGame}){
+function HomeScreen({onSelect,onCreate}){
   const [games,setGames]=useState([]);
   const [loading,setLoading]=useState(true);
   const [showMobile,setShowMobile]=useState(false);
@@ -7996,29 +7996,98 @@ function HomeScreen({onSelect,onCreate,onCrossGame}){
         <div style={{fontSize:13,color:'#64748b'}}>高校野球 配球記録アプリ</div>
       </div>
 
-      {/* ★ 試合の入力を始める ボタン */}
+      {/* ① 試合の入力を始める */}
       <button
         className="btn btn-primary"
         style={{width:'100%',padding:'18px',fontSize:18,fontWeight:800,borderRadius:14,
-          marginBottom:8,boxShadow:'0 4px 24px rgba(59,130,246,.35)',letterSpacing:'.5px'}}
+          marginBottom:16,boxShadow:'0 4px 24px rgba(59,130,246,.35)',letterSpacing:'.5px'}}
         onClick={onCreate}
       >
          &nbsp;試合の入力を始める
       </button>
 
-      {/* 通算データボタン */}
-      <button
-        onClick={onCrossGame}
-        style={{width:'100%',padding:'14px',fontSize:15,fontWeight:700,borderRadius:12,
-          marginBottom:12,border:'1.5px solid rgba(96,165,250,.4)',
-          background:'rgba(96,165,250,.08)',color:'#93c5fd',
-          cursor:'pointer',fontFamily:'inherit',letterSpacing:'.3px'}}>
-        📊 通算データを見る（複数試合）
-      </button>
+      {/* ② 過去の試合一覧 */}
+      <div style={{marginBottom:20}}>
+        {loading?(
+          <div style={{textAlign:'center',color:'#334155',padding:16,fontSize:13}}>読み込み中…</div>
+        ):games.length===0?(
+          <div style={{textAlign:'center',color:'#334155',padding:'12px 0',fontSize:13}}>
+            まだ試合の記録がありません
+          </div>
+        ):(
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:'#64748b',textTransform:'uppercase',
+              letterSpacing:'1px',marginBottom:10}}>過去の試合</div>
+            {games.map(g=>{
+              const away=(g.gs?.score?.away||0)+(g.gs?.scoreAdj?.away||0);
+              const home=(g.gs?.score?.home||0)+(g.gs?.scoreAdj?.home||0);
+              const deleteGame=async(e)=>{
+                e.stopPropagation();
+                if(!confirm(`「${g.name||'名称未設定'}」を削除しますか？\n\n投球データ・スタメン情報も全て削除されます。\nこの操作は取り消せません。`)) return;
+                try{
+                  const ps=await dbGetByIdx('pitches','gid',g.id);
+                  for(const p of ps) await dbDel('pitches',p.id);
+                  await dbDel('games',g.id);
+                  setGames(prev=>prev.filter(x=>x.id!==g.id));
+                }catch(err){
+                  alert('削除エラー: '+err.message);
+                }
+              };
+              return (
+                <div key={g.id} className="card" style={{marginBottom:8,cursor:'pointer',
+                  border:`1px solid ${g.endedAt?'rgba(34,197,94,.4)':'#334155'}`,
+                  transition:'border-color .15s',
+                  background:g.endedAt?'rgba(34,197,94,.04)':undefined}}
+                  onClick={()=>onSelect(g.id)}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
+                        display:'flex',alignItems:'center',gap:6}}>
+                        {g.endedAt&&<span style={{fontSize:9,padding:'1px 6px',borderRadius:8,
+                          background:'rgba(34,197,94,.2)',color:'#4ade80',fontWeight:800,flexShrink:0}}>終了</span>}
+                        <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.name||'名称未設定'}</span>
+                      </div>
+                      <div style={{fontSize:12,color:'#64748b',marginTop:3}}>
+                        {g.date||''}{g.stadium?` ${g.stadium}`:''}{g.battingFirst?` / 先攻:${g.battingFirst}`:''}
+                      </div>
+                    </div>
+                    <div style={{textAlign:'right',marginLeft:8,flexShrink:0}}>
+                      <div style={{fontSize:18,fontWeight:800,color:'#e2e8f0'}}>{away} - {home}</div>
+                      <div style={{fontSize:11,color:'#64748b'}}>{g.gs?.pitchCount||0}球 / {g.gs?.inning||1}回{g.gs?.topBottom==='top'?'表':'裏'}</div>
+                    </div>
+                    <button onClick={deleteGame}
+                      title="削除"
+                      style={{marginLeft:8,padding:'8px 10px',borderRadius:8,
+                        background:'transparent',border:'1px solid #64748b',
+                        color:'#94a3b8',fontSize:14,cursor:'pointer',
+                        fontFamily:'inherit',flexShrink:0,transition:'all .15s'}}
+                      onMouseEnter={e=>{
+                        e.currentTarget.style.background='rgba(239,68,68,.15)';
+                        e.currentTarget.style.borderColor='#ef4444';
+                        e.currentTarget.style.color='#fca5a5';
+                      }}
+                      onMouseLeave={e=>{
+                        e.currentTarget.style.background='transparent';
+                        e.currentTarget.style.borderColor='#64748b';
+                        e.currentTarget.style.color='#94a3b8';
+                      }}>
+                      削除
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-      {/* JSON取込 */}
+      {/* ③ アクセスURL */}
+      <div style={{marginBottom:20}}>
+        <GitHubUrlCard/>
+      </div>
+
+      {/* ④ JSONファイルについて */}
       <div style={{marginBottom:24}}>
-        {/* 手順説明カード */}
         <div style={{background:'rgba(168,85,247,.08)',border:'1px solid rgba(168,85,247,.25)',
           borderRadius:12,padding:'14px 16px',marginBottom:12}}>
           <div style={{fontSize:13,fontWeight:800,color:'#c084fc',marginBottom:10,letterSpacing:'.3px'}}>
@@ -8054,7 +8123,6 @@ function HomeScreen({onSelect,onCreate,onCrossGame}){
             </div>
           </div>
         </div>
-        {/* 取込ボタン */}
         <button
           onClick={()=>{
             const input=document.createElement('input');
@@ -8078,7 +8146,6 @@ function HomeScreen({onSelect,onCreate,onCrossGame}){
                     :`試合データを取り込みますか？\n\n試合: ${data.game.name||'名称未設定'}\n投球数: ${data.pitches.length}`
                 );
                 if(!ok) return;
-                // 既存のpitches削除→新規挿入
                 if(isUpdate){
                   const oldPs=await dbGetByIdx('pitches','gid',data.game.id);
                   for(const p of oldPs) await dbDel('pitches',p.id);
@@ -8103,86 +8170,8 @@ function HomeScreen({onSelect,onCreate,onCrossGame}){
         </button>
       </div>
 
-      {/* GitHub Pages URLカード */}
-      <GitHubUrlCard/>
-
-      {/* 過去の試合一覧 */}
-      {!loading&&games.length>0&&(
-        <div>
-          <div style={{fontSize:12,fontWeight:700,color:'#64748b',textTransform:'uppercase',
-            letterSpacing:'1px',marginBottom:10}}>過去の試合</div>
-          {games.map(g=>{
-            const away=(g.gs?.score?.away||0)+(g.gs?.scoreAdj?.away||0);
-            const home=(g.gs?.score?.home||0)+(g.gs?.scoreAdj?.home||0);
-            const deleteGame=async(e)=>{
-              e.stopPropagation();
-              if(!confirm(`「${g.name||'名称未設定'}」を削除しますか？\n\n投球データ・スタメン情報も全て削除されます。\nこの操作は取り消せません。`)) return;
-              try{
-                // 関連投球データを全削除
-                const ps=await dbGetByIdx('pitches','gid',g.id);
-                for(const p of ps) await dbDel('pitches',p.id);
-                // 試合データ削除
-                await dbDel('games',g.id);
-                setGames(prev=>prev.filter(x=>x.id!==g.id));
-              }catch(err){
-                alert('削除エラー: '+err.message);
-              }
-            };
-            return (
-              <div key={g.id} className="card" style={{marginBottom:8,cursor:'pointer',
-                border:`1px solid ${g.endedAt?'rgba(34,197,94,.4)':'#334155'}`,
-                transition:'border-color .15s',
-                background:g.endedAt?'rgba(34,197,94,.04)':undefined}}
-                onClick={()=>onSelect(g.id)}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
-                      display:'flex',alignItems:'center',gap:6}}>
-                      {g.endedAt&&<span style={{fontSize:9,padding:'1px 6px',borderRadius:8,
-                        background:'rgba(34,197,94,.2)',color:'#4ade80',fontWeight:800,flexShrink:0}}>終了</span>}
-                      <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.name||'名称未設定'}</span>
-                    </div>
-                    <div style={{fontSize:12,color:'#64748b',marginTop:3}}>
-                      {g.date||''}{g.stadium?` ${g.stadium}`:''}{g.battingFirst?` / 先攻:${g.battingFirst}`:''}
-                    </div>
-                  </div>
-                  <div style={{textAlign:'right',marginLeft:8,flexShrink:0}}>
-                    <div style={{fontSize:18,fontWeight:800,color:'#e2e8f0'}}>{away} - {home}</div>
-                    <div style={{fontSize:11,color:'#64748b'}}>{g.gs?.pitchCount||0}球 / {g.gs?.inning||1}回{g.gs?.topBottom==='top'?'表':'裏'}</div>
-                  </div>
-                  <button onClick={deleteGame}
-                    title="削除"
-                    style={{marginLeft:8,padding:'8px 10px',borderRadius:8,
-                      background:'transparent',border:'1px solid #64748b',
-                      color:'#94a3b8',fontSize:14,cursor:'pointer',
-                      fontFamily:'inherit',flexShrink:0,
-                      transition:'all .15s'}}
-                    onMouseEnter={e=>{
-                      e.currentTarget.style.background='rgba(239,68,68,.15)';
-                      e.currentTarget.style.borderColor='#ef4444';
-                      e.currentTarget.style.color='#fca5a5';
-                    }}
-                    onMouseLeave={e=>{
-                      e.currentTarget.style.background='transparent';
-                      e.currentTarget.style.borderColor='#64748b';
-                      e.currentTarget.style.color='#94a3b8';
-                    }}>
-                    削除
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {!loading&&games.length===0&&(
-        <div style={{textAlign:'center',color:'#334155',marginTop:20,fontSize:13}}>
-          まだ試合の記録がありません
-        </div>
-      )}
-
-      {/* 入力情報リセット */}
-      <div style={{marginTop:40,paddingTop:20,borderTop:'1px solid #1e293b'}}>
+      {/* ⑤ リセットボタン */}
+      <div style={{paddingTop:20,borderTop:'1px solid #1e293b'}}>
         <button
           onClick={async()=>{
             if(!confirm('入力してある記録を全てリセットしますか？\n\n・全ての試合データ\n・全ての投球記録\n\nが消えます。')) return;
@@ -8908,10 +8897,7 @@ function App(){
   };
 
   if(screen==='home')
-    return <HomeScreen onSelect={loadGame} onCreate={()=>setScreen('create')}
-      onCrossGame={()=>setScreen('crossgame')}/>;
-  if(screen==='crossgame')
-    return <CrossGameScreen onBack={()=>setScreen('home')}/>;
+    return <HomeScreen onSelect={loadGame} onCreate={()=>setScreen('create')}/>;
 
   if(screen==='create')
     return <GameSetupScreen
