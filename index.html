@@ -223,11 +223,12 @@ const RESULT_CATS=[
    ]},
   {id:'advance',label:'進塁', color:'#06b6d4', cls:'adv',
    items:[
-     {id:'steal', label:'盗塁', noDir:true, isAdvance:true},
-     {id:'delayed', label:'ディレード', noDir:true, isAdvance:true},
-     {id:'hitrun', label:'エンドラン', noDir:true, isAdvance:true},
-     {id:'pb', label:'PB', noDir:true, isAdvance:true},
-     {id:'wp', label:'WP', noDir:true, isAdvance:true},
+     {id:'steal',        label:'盗塁',           noDir:true, isAdvance:true},
+     {id:'double_steal', label:'ダブルスチール',  noDir:true, isAdvance:true},
+     {id:'delayed',      label:'ディレード',      noDir:true, isAdvance:true},
+     {id:'hitrun',       label:'エンドラン',      noDir:true, isAdvance:true},
+     {id:'pb',           label:'PB',             noDir:true, isAdvance:true},
+     {id:'wp',           label:'WP',             noDir:true, isAdvance:true},
    ]},
   {id:'bb', label:'四死球', color:'#f97316', cls:'bb',
    items:[
@@ -442,6 +443,12 @@ function nextState(result,g,extra={}){
       if(runners.second){ runners.third=true; runners.second=false; }
       if(runners.first){ runners.second=true; runners.first=false; }
     }
+    atEnd=false; // 打席継続
+  // ── ダブルスチール（全走者1進塁）──
+  } else if(r==='double_steal'){
+    if(runners.third){ addRun(1); runners.third=false; }
+    if(runners.second){ runners.third=true; runners.second=false; }
+    if(runners.first){ runners.second=true; runners.first=false; }
     atEnd=false; // 打席継続
   // ── PB/WP（投手のミス・全走者進塁）──
   } else if(r==='pb'||r==='wp'){
@@ -2316,14 +2323,18 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
     {id:'bunt_err',   l:'バントエラー',     color:'#14b8a6',bg:'#022c22'},
   ];
   const ADV_CHOICES=[
-    {id:'steal',l:'盗塁',color:'#06b6d4',bg:'#0c1a2e'},
-    {id:'pb',   l:'PB',  color:'#06b6d4',bg:'#0c1a2e'},
-    {id:'wp',   l:'WP',  color:'#06b6d4',bg:'#0c1a2e'},
+    {id:'steal',          l:'盗塁',           color:'#06b6d4',bg:'#0c1a2e'},
+    {id:'double_steal',   l:'ダブルスチール',  color:'#22d3ee',bg:'#021a1e'},
+    {id:'pb',             l:'PB',             color:'#06b6d4',bg:'#0c1a2e'},
+    {id:'wp',             l:'WP',             color:'#06b6d4',bg:'#0c1a2e'},
+    {id:'caught_stealing',l:'盗塁死',         color:'#f97316',bg:'#3b1506'},
+    {id:'tag_out',        l:'刺殺(走塁)',      color:'#ef4444',bg:'#3f0a0a'},
   ];
   const TACTICS_CHOICES=[
-    {id:'steal',   l:'盗塁',      color:'#67e8f9',bg:'#021a1e'},
-    {id:'delayed', l:'ディレード',color:'#67e8f9',bg:'#021a1e'},
-    {id:'hitrun',  l:'エンドラン',color:'#67e8f9',bg:'#021a1e'},
+    {id:'steal',        l:'盗塁',           color:'#67e8f9',bg:'#021a1e'},
+    {id:'double_steal', l:'ダブルスチール',  color:'#22d3ee',bg:'#021a1e'},
+    {id:'delayed',      l:'ディレード',     color:'#67e8f9',bg:'#021a1e'},
+    {id:'hitrun',       l:'エンドラン',     color:'#67e8f9',bg:'#021a1e'},
   ];
   const SAC_CHOICES=[
     {id:'sac_bunt',    l:'犠打',               color:'#a78bfa',bg:'#2d1b4e'},
@@ -2871,6 +2882,12 @@ async function generateScoutingPDF(game, pitches, setProgress){
     for(let z=1;z<=25;z++) zoneC[z]=0;
     mine.forEach(p=>{if(p.zone)zoneC[p.zone]++;});
     const maxZ=Math.max(...Object.values(zoneC),1);
+    const zoneTotal=Object.values(zoneC).reduce((a,b)=>a+b,0);
+    const strikeZones=new Set([7,8,9,12,13,14,17,18,19]);
+    const insideZones=[1,6,7,11,12,16,17,21,22];
+    const outsideZones=[5,9,10,14,15,19,20,24,25];
+    const sumZ=zs=>zs.reduce((a,z)=>a+(zoneC[z]||0),0);
+    const pctZ=zs=>zoneTotal>0?Math.round(sumZ(zs)/zoneTotal*100):0;
 
     // 3) 球種別ストライク率
     const ptSR={};
@@ -2938,283 +2955,184 @@ async function generateScoutingPDF(game, pitches, setProgress){
     const afterWalk=firstPtAfter(p=>p.result==='walk');
 
     // ── HTML組み立て ──
-    // 投手見出し + 主要指標（投球数・ストライク率）
+    // セクション枠ヘルパー
+    const SEC=(num,label,bc)=>
+      `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:800;color:#111827;margin-bottom:8px;
+          border-left:3px solid ${bc};padding-left:6px">${num} ${label}</div>`;
+    // 球種バーヘルパー
+    const ptBar=(p,pct,n)=>
+      `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <div style="width:62px;flex-shrink:0;font-size:11px;font-weight:700;color:#374151">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+            background:${p.color};margin-right:4px;vertical-align:middle"></span>
+          ${p.label}
+        </div>
+        <div style="flex:1;height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${p.color};border-radius:5px"></div>
+        </div>
+        <div style="width:32px;text-align:right;font-size:11px;font-weight:800;color:#111827">${pct}%</div>
+        <div style="font-size:9px;color:#9ca3af;width:22px;text-align:right">${n}球</div>
+      </div>`;
+    // 事後初球バーヘルパー
+    const renderPtBars=(ct)=>{
+      const tot=Object.values(ct).reduce((a,b)=>a+b,0);
+      if(!tot) return '<div style="color:#9ca3af;font-size:11px;padding:4px 0">データなし</div>';
+      return PT.filter(p=>ct[p.id]>0)
+        .sort((a,b)=>ct[b.id]-ct[a.id])
+        .map(p=>ptBar(p,Math.round(ct[p.id]/tot*100),ct[p.id]))
+        .join('');
+    };
+    // カウント/走者ミックステーブル行ヘルパー
+    const mixRow=(label,mix)=>{
+      if(!mix||mix.t===0) return '';
+      const top=PT.filter(p=>(mix.pt[p.id]||0)>0)
+        .sort((a,b)=>(mix.pt[b.id]||0)-(mix.pt[a.id]||0)).slice(0,4);
+      const cols=top.map(p=>{
+        const pct=Math.round((mix.pt[p.id]||0)/mix.t*100);
+        return `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:7px;
+          font-size:10px;font-weight:700;color:#1f2937">
+          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;
+            background:${p.color}"></span>${p.short} ${pct}%</span>`;
+      }).join('');
+      return `<tr style="border-bottom:1px solid #f3f4f6">
+        <td style="padding:4px 6px;font-weight:800;color:#374151;white-space:nowrap">${label}</td>
+        <td style="padding:4px 4px;color:#9ca3af;text-align:right;width:26px">${mix.t}</td>
+        <td style="padding:4px 6px">${cols}</td>
+      </tr>`;
+    };
+
     html += `
       <div style="${idx>0?'page-break-before:always;':''}margin-bottom:18px">
         <div style="font-size:20px;font-weight:900;color:#111827;
-          padding-bottom:6px;border-bottom:2px solid #3b82f6;margin-bottom:10px">
+          padding-bottom:6px;border-bottom:2px solid #3b82f6;margin-bottom:14px">
            ${escapeHtml(pn)}
+          <span style="font-size:13px;font-weight:400;color:#6b7280;margin-left:10px">
+            ${tot}球 ／ ストライク率 ${sRate}%
+          </span>
         </div>
-        <table style="width:100%;border-collapse:collapse;margin-bottom:14px;
-          background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px">
-          <tr>
-            ${[
-              {l:'総投球数',v:tot,    c:'#111827'},
-              {l:'ストライク率',v:sRate+'%',c:'#ca8a04'},
-            ].map(d=>`
-              <td style="padding:14px 8px;text-align:center;border-right:1px solid #e5e7eb">
-                <div style="font-size:28px;font-weight:900;color:${d.c};line-height:1">${d.v}</div>
-                <div style="font-size:10px;color:#6b7280;margin-top:4px">${d.l}</div>
-              </td>`).join('')}
-          </tr>
-        </table>
     `;
 
-    // ① 球種
-    const ptMixRows = ptList.map(p=>{
-      const c=ptC[p.id], pct=Math.round(c/tot*100);
-      const srInfo=ptSR[p.id];
-      const sr=srInfo&&srInfo.t>0?Math.round(srInfo.k/srInfo.t*100):null;
-      const spArr=ptSpeed[p.id]||[];
-      const avgSp=spArr.length?Math.round(spArr.reduce((a,b)=>a+b,0)/spArr.length):null;
-      const maxSp=spArr.length?Math.max(...spArr):null;
-      return `
-        <tr style="border-bottom:1px solid #f3f4f6">
-          <td style="padding:6px 8px;font-size:12px;width:72px">
-            <span style="display:inline-block;width:9px;height:9px;border-radius:50%;
-              background:${p.color};margin-right:5px;vertical-align:middle"></span>
-            <span style="color:#1f2937;font-weight:700;vertical-align:middle">${p.label}</span>
-          </td>
-          <td style="padding:6px 6px">
-            <div style="display:flex;align-items:center;gap:5px">
-              <div style="flex:1;height:10px;background:#e5e7eb;border-radius:5px;overflow:hidden">
-                <div style="width:${pct}%;height:100%;background:${p.color}"></div>
-              </div>
-              <span style="font-weight:800;color:#111827;min-width:30px;text-align:right">${pct}%</span>
-            </div>
-          </td>
-          <td style="padding:6px 4px;text-align:right;color:#6b7280;font-size:11px;white-space:nowrap">${c}球</td>
-          <td style="padding:6px 4px;text-align:right;font-size:11px;white-space:nowrap;
-            color:${sr!=null?(sr>=60?'#16a34a':sr>=45?'#ca8a04':'#dc2626'):'#9ca3af'};font-weight:700">
-            ${sr!=null?'S率'+sr+'%':''}
-          </td>
-          <td style="padding:6px 4px;text-align:right;font-size:11px;white-space:nowrap;color:#3b82f6;font-weight:700">
-            ${avgSp!=null?'平均'+avgSp+'km':'<span style="color:#9ca3af">-</span>'}
-          </td>
-          <td style="padding:6px 4px;text-align:right;font-size:11px;white-space:nowrap;color:#ef4444;font-weight:700">
-            ${maxSp!=null?'MAX'+maxSp+'km':'<span style="color:#9ca3af">-</span>'}
-          </td>
-        </tr>`;
-    }).join('');
+    // ── ② 球種割合 ──
+    html += SEC('②','球種割合','#3b82f6')
+      +(ptList.length
+        ? ptList.map(p=>ptBar(p,Math.round(ptC[p.id]/tot*100),ptC[p.id])).join('')
+        : '<div style="color:#9ca3af;font-size:11px">データなし</div>')
+      +'</div>';
 
-    html += `
-      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:800;color:#111827;margin-bottom:8px;
-          border-left:3px solid #3b82f6;padding-left:6px">
-          ① 球種
-        </div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px">
-          <thead>
-            <tr style="border-bottom:2px solid #e5e7eb">
-              <th style="padding:4px 8px;text-align:left;font-size:10px;color:#9ca3af;font-weight:600">球種</th>
-              <th style="padding:4px 6px;text-align:left;font-size:10px;color:#9ca3af;font-weight:600">割合</th>
-              <th style="padding:4px 4px;text-align:right;font-size:10px;color:#9ca3af;font-weight:600">球数</th>
-              <th style="padding:4px 4px;text-align:right;font-size:10px;color:#9ca3af;font-weight:600">S率</th>
-              <th style="padding:4px 4px;text-align:right;font-size:10px;color:#3b82f6;font-weight:600">平均球速</th>
-              <th style="padding:4px 4px;text-align:right;font-size:10px;color:#ef4444;font-weight:600">MAX</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${ptMixRows||'<tr><td colspan="6" style="padding:10px;color:#9ca3af">データなし</td></tr>'}
-          </tbody>
-        </table>
-        ${speeds.length>0?`
-        <div style="margin-top:8px;padding:6px 8px;background:#f9fafb;border-radius:5px;
-          display:flex;gap:16px;font-size:11px">
-          <span style="color:#6b7280">全球種合計</span>
-          <span style="color:#3b82f6;font-weight:700">平均 ${avgS}km/h</span>
-          <span style="color:#ef4444;font-weight:700">MAX ${maxS}km/h</span>
-          <span style="color:#9ca3af">(${speeds.length}球計測)</span>
-        </div>`:''}
-      </div>
-    `;
-
-    // ② クイックタイム
-    const pnQuickTimes=(game.quickTimes||[]).filter(t=>t.pitcher===pn);
-    if(pnQuickTimes.length>0){
-      const qtMs=pnQuickTimes.map(t=>t.time);
-      const qtAvg=Math.round(qtMs.reduce((a,b)=>a+b,0)/qtMs.length);
-      const qtMin=Math.min(...qtMs), qtMax=Math.max(...qtMs);
-      const fmtQ=ms=>{
-        const m=Math.floor(ms/60000), s=Math.floor((ms%60000)/1000), cs=Math.floor((ms%1000)/10);
-        return `${m>0?m+':':''}${String(s).padStart(m>0?2:1,'0')}.${String(cs).padStart(2,'0')}`;
-      };
-      const stQt=pnQuickTimes.filter(t=>!t.pitchType||t.pitchType==='st');
-      const offQt=pnQuickTimes.filter(t=>t.pitchType==='off');
-      const splitRow=(label,arr,color)=>{
-        if(!arr.length) return '';
-        const avg=Math.round(arr.reduce((a,b)=>a+b.time,0)/arr.length);
-        const mn=Math.min(...arr.map(t=>t.time)), mx=Math.max(...arr.map(t=>t.time));
-        return `
-          <div style="flex:1;text-align:center;padding:8px 4px;
-            background:${color}11;border:1px solid ${color}44;border-radius:6px">
-            <div style="font-size:9px;color:#6b7280;margin-bottom:3px">${label}（${arr.length}件）</div>
-            <div style="font-size:16px;font-weight:900;color:${color};font-family:monospace">${fmtQ(avg)}</div>
-            <div style="font-size:9px;color:#9ca3af;margin-top:2px">最速 ${fmtQ(mn)} / 最遅 ${fmtQ(mx)}</div>
-          </div>`;
-      };
-      const qtRows=pnQuickTimes.map((t,i)=>{
-        const c=t.time===qtMin?'#16a34a':t.time===qtMax?'#dc2626':'#374151';
-        const badge=t.time===qtMin?'最速':t.time===qtMax?'最遅':'';
-        const ptColor=t.pitchType==='off'?'#6366f1':'#d97706';
-        const ptLabel=t.pitchType==='off'?'変化':'直球';
-        return `
-          <tr style="border-bottom:1px solid #f3f4f6">
-            <td style="padding:4px 8px;color:#6b7280;font-size:10px">#${i+1}</td>
-            <td style="padding:4px 8px">
-              <span style="font-size:9px;padding:1px 5px;border-radius:4px;
-                background:${ptColor}22;color:${ptColor};font-weight:700">${ptLabel}</span>
-            </td>
-            <td style="padding:4px 8px;font-weight:800;color:${c};font-family:monospace;font-size:13px">${t.formatted}</td>
-            <td style="padding:4px 8px">
-              ${badge?`<span style="font-size:9px;padding:1px 6px;border-radius:4px;
-                background:${c}22;color:${c};font-weight:700">${badge}</span>`:''}
-            </td>
-          </tr>`;
-      }).join('');
-      html += `
-        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:800;color:#111827;margin-bottom:8px;
-            border-left:3px solid #d97706;padding-left:6px">
-            ② クイックタイム（${pnQuickTimes.length}件）
-          </div>
-          <div style="display:flex;gap:0;margin-bottom:10px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden">
-            ${[
-              {l:'平均（全体）',v:fmtQ(qtAvg),c:'#d97706'},
-              {l:'最速',v:fmtQ(qtMin),c:'#16a34a'},
-              {l:'最遅',v:fmtQ(qtMax),c:'#dc2626'},
-            ].map(d=>`
-              <div style="flex:1;padding:10px 4px;text-align:center;border-right:1px solid #e5e7eb">
-                <div style="font-size:20px;font-weight:900;color:${d.c};font-family:monospace">${d.v}</div>
-                <div style="font-size:9px;color:#6b7280;margin-top:3px">${d.l}</div>
-              </div>`).join('')}
-          </div>
-          ${(stQt.length>0||offQt.length>0)?`
-          <div style="display:flex;gap:6px;margin-bottom:10px">
-            ${splitRow('直球',stQt,'#d97706')}
-            ${splitRow('変化球',offQt,'#6366f1')}
-          </div>`:''}
-          <table style="width:100%;border-collapse:collapse;font-size:11px">
-            ${qtRows}
-          </table>
-        </div>
-      `;
-    } else {
-      html += `
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px;margin-bottom:14px">
-          <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:4px">
-            ② クイックタイム
-          </div>
-          <div style="font-size:11px;color:#78716c">
-            計測記録なし（ストップウォッチ→クイックタイプで計測できます）
-          </div>
-        </div>
-      `;
-    }
-
-    // ③ コース割合 ヒートマップ
-    const zoneTotal=Object.values(zoneC).reduce((a,b)=>a+b,0);
+    // ── ③ コース割合（内角・外角のみ） ──
     if(zoneTotal>0){
-      // 5×5グリッド。ストライクゾーンは 7-9, 12-14, 17-19
-      const strikeZones=new Set([7,8,9,12,13,14,17,18,19]);
-      // エリア集計: 高め/真ん中/低め × 内角/真ん中/外角
-      const areaLabels=[
-        ['高め\n内角',[6,7],'高め\n真中',[8],'高め\n外角',[9,10]],
-      ];
-      // 行×列で色強度セル
-      const rows5=[[1,2,3,4,5],[6,7,8,9,10],[11,12,13,14,15],[16,17,18,19,20],[21,22,23,24,25]];
-      const rowLabels=['高め','↑','真中','↓','低め'];
-      const colLabels=['内','','真','','外'];
-      const maxCell=Math.max(...Object.values(zoneC).filter(v=>v>0),1);
-      const cellHtml=rows5.map((row,ri)=>`
-        <tr>
-          <td style="padding:2px 4px;font-size:9px;color:#9ca3af;text-align:right;white-space:nowrap">
-            ${rowLabels[ri]}
-          </td>
-          ${row.map(z=>{
-            const cnt=zoneC[z]||0;
-            const pct=zoneTotal>0?Math.round(cnt/zoneTotal*100):0;
-            const intensity=cnt/maxCell;
-            const isStrike=strikeZones.has(z);
-            // ストライクゾーン内は青系、ボールゾーンはグレー系
-            const bg=cnt===0?'#f9fafb':isStrike
-              ?`rgba(59,130,246,${0.12+intensity*0.78})`
-              :`rgba(100,116,139,${0.08+intensity*0.52})`;
-            const fc=cnt===0?'#d1d5db':isStrike
-              ?(intensity>0.5?'#fff':'#1d4ed8')
-              :(intensity>0.5?'#fff':'#475569');
-            return `
-              <td style="padding:0;width:42px;height:38px;text-align:center;
-                border:${isStrike?'1.5px solid #93c5fd':'1px solid #e2e8f0'};
-                background:${bg};border-radius:3px;position:relative">
-                ${cnt>0?`
-                  <div style="font-size:13px;font-weight:800;color:${fc};line-height:1">${pct}%</div>
-                  <div style="font-size:9px;color:${fc};opacity:.8">${cnt}球</div>
-                `:`<div style="font-size:10px;color:#e2e8f0">-</div>`}
-              </td>`;
-          }).join('')}
-        </tr>`).join('');
-
-      // エリア別集計（3×3ブロック）
-      const areaMap={
-        '高め内': [1,2,6,7],    '高め中': [3,8],          '高め外': [4,5,9,10],
-        '中内':   [11,12,16,17],'真中':   [13],            '中外':   [14,15,19,20],
-        '低め内': [21,22],       '低め中': [23,18],         '低め外': [24,25],
-      };
-      // ゾーン方向別集計
-      const highZones=[1,2,3,4,5,6,7,8,9,10], midZones=[11,12,13,14,15,16,17,18,19,20], lowZones=[21,22,23,24,25];
-      const insideZones=[1,6,7,11,12,16,17,21,22], outsideZones=[5,9,10,14,15,19,20,24,25];
-      const sumZ=zs=>zs.reduce((a,z)=>a+(zoneC[z]||0),0);
-      const pctZ=zs=>zoneTotal>0?Math.round(sumZ(zs)/zoneTotal*100):0;
-      const strikeTotal=sumZ([...strikeZones]);
-      const strikePct=zoneTotal>0?Math.round(strikeTotal/zoneTotal*100):0;
-
-      html += `
-        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:800;color:#111827;margin-bottom:10px;
-            border-left:3px solid #10b981;padding-left:6px">
-            ③ コース割合（${zoneTotal}球）
-          </div>
-          <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-            <!-- ゾーンヒートマップ -->
-            <div>
-              <table style="border-collapse:separate;border-spacing:2px">
-                <thead>
-                  <tr>
-                    <td></td>
-                    ${colLabels.map(l=>`<td style="text-align:center;font-size:9px;color:#9ca3af;padding:0 2px">${l}</td>`).join('')}
-                  </tr>
-                </thead>
-                <tbody>${cellHtml}</tbody>
-              </table>
-              <div style="margin-top:4px;font-size:9px;color:#93c5fd;text-align:center">
-                ■ 青枠 = ストライクゾーン
+      const inN=sumZ(insideZones), outN=sumZ(outsideZones);
+      const inP=pctZ(insideZones), outP=pctZ(outsideZones);
+      html += SEC('③',`コース割合 内角・外角（${zoneTotal}球）`,'#10b981')+`
+        <div style="display:flex;gap:14px">
+          ${[{l:'内角（イン）',v:inP,n:inN,c:'#ef4444'},{l:'外角（アウト）',v:outP,n:outN,c:'#10b981'}].map(d=>`
+            <div style="flex:1;text-align:center">
+              <div style="font-size:10px;font-weight:700;color:${d.c};margin-bottom:5px">${d.l}</div>
+              <div style="height:12px;background:#f3f4f6;border-radius:6px;overflow:hidden;margin-bottom:4px">
+                <div style="width:${d.v}%;height:100%;background:${d.c};border-radius:6px"></div>
               </div>
-            </div>
-            <!-- エリア別サマリー -->
-            <div style="flex:1;min-width:120px">
-              <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:6px">エリア別</div>
-              ${[
-                {l:'ストライクゾーン',v:strikePct,c:'#3b82f6',zs:[...strikeZones]},
-                {l:'高め',v:pctZ(highZones),c:'#f59e0b',zs:highZones},
-                {l:'低め',v:pctZ(lowZones),c:'#8b5cf6',zs:lowZones},
-                {l:'内角',v:pctZ(insideZones),c:'#ef4444',zs:insideZones},
-                {l:'外角',v:pctZ(outsideZones),c:'#10b981',zs:outsideZones},
-              ].map(d=>`
-                <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px">
-                  <div style="font-size:10px;color:#6b7280;width:80px;flex-shrink:0">${d.l}</div>
-                  <div style="flex:1;height:8px;background:#f3f4f6;border-radius:4px;overflow:hidden">
-                    <div style="width:${d.v}%;height:100%;background:${d.c};border-radius:4px"></div>
-                  </div>
-                  <div style="font-size:10px;font-weight:700;color:${d.c};min-width:28px;text-align:right">
-                    ${d.v}%
-                  </div>
-                </div>`).join('')}
-            </div>
-          </div>
+              <div style="font-size:22px;font-weight:900;color:${d.c};line-height:1">${d.v}%</div>
+              <div style="font-size:10px;color:#9ca3af;margin-top:2px">${d.n}球</div>
+            </div>`).join('')}
         </div>
-      `;
+      </div>`;
     }
+
+    // ── ④ 球種別球速 ──
+    const speedPts=PT.filter(p=>(ptSpeed[p.id]||[]).length>0);
+    if(speedPts.length>0){
+      const spRows=speedPts.map(p=>{
+        const arr=ptSpeed[p.id];
+        const avg=Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
+        const max=Math.max(...arr);
+        return `<tr style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:5px 8px;font-size:11px;font-weight:700">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+              background:${p.color};margin-right:4px;vertical-align:middle"></span>${p.label}
+          </td>
+          <td style="padding:5px 8px;font-size:14px;font-weight:900;color:#3b82f6;text-align:right">${avg}<span style="font-size:9px;font-weight:400;color:#9ca3af"> km/h</span></td>
+          <td style="padding:5px 8px;font-size:14px;font-weight:900;color:#ef4444;text-align:right">${max}<span style="font-size:9px;font-weight:400;color:#9ca3af"> km/h</span></td>
+        </tr>`;
+      }).join('');
+      html += SEC('④','球種別球速（平均・MAX）','#3b82f6')+`
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:2px solid #e5e7eb">
+            <th style="padding:4px 8px;text-align:left;font-size:10px;color:#9ca3af;font-weight:600">球種</th>
+            <th style="padding:4px 8px;text-align:right;font-size:10px;color:#3b82f6;font-weight:600">平均</th>
+            <th style="padding:4px 8px;text-align:right;font-size:10px;color:#ef4444;font-weight:600">MAX</th>
+          </tr></thead>
+          <tbody>${spRows}</tbody>
+        </table>
+        ${speeds.length?`<div style="margin-top:6px;font-size:10px;color:#6b7280">全体: 平均 ${avgS} km/h ／ MAX ${maxS} km/h</div>`:''}
+      </div>`;
+    }
+
+    // ── ⑤ カウント別球種割合 ──
+    const cntRows=COUNT_LIST.map(cnt=>{
+      const mix=countMix[cnt];
+      if(!mix||mix.t===0) return '';
+      return mixRow(cnt,mix);
+    }).filter(Boolean).join('');
+    if(cntRows){
+      html += SEC('⑤','カウント別球種割合','#f59e0b')+`
+        <table style="width:100%;border-collapse:collapse;font-size:10px">
+          <thead><tr style="border-bottom:2px solid #e5e7eb">
+            <th style="padding:3px 6px;text-align:left;color:#9ca3af;font-weight:600;width:40px">カウント</th>
+            <th style="padding:3px 4px;text-align:right;color:#9ca3af;font-weight:600;width:26px">球数</th>
+            <th style="padding:3px 4px;text-align:left;color:#9ca3af;font-weight:600">主な球種（上位4種）</th>
+          </tr></thead>
+          <tbody>${cntRows}</tbody>
+        </table>
+      </div>`;
+    }
+
+    // ── ⑥ 走者状況別の球種割合 ──
+    const rnRows=RUNNER_LIST.map(({k,l})=>mixRow(l,runnerMix[k])).filter(Boolean).join('');
+    if(rnRows){
+      html += SEC('⑥','走者状況別の球種割合','#8b5cf6')+`
+        <table style="width:100%;border-collapse:collapse;font-size:10px">
+          <thead><tr style="border-bottom:2px solid #e5e7eb">
+            <th style="padding:3px 6px;text-align:left;color:#9ca3af;font-weight:600;width:56px">走者</th>
+            <th style="padding:3px 4px;text-align:right;color:#9ca3af;font-weight:600;width:26px">球数</th>
+            <th style="padding:3px 4px;text-align:left;color:#9ca3af;font-weight:600">主な球種（上位4種）</th>
+          </tr></thead>
+          <tbody>${rnRows}</tbody>
+        </table>
+      </div>`;
+    }
+
+    // ── ⑦ 球種別のストライク率 ──
+    const srBars=ptList.map(p=>{
+      const sr=ptSR[p.id];
+      if(!sr||sr.t===0) return '';
+      const pct=Math.round(sr.k/sr.t*100);
+      const col=pct>=60?'#16a34a':pct>=45?'#ca8a04':'#dc2626';
+      return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+        <div style="width:62px;flex-shrink:0;font-size:11px;font-weight:700;color:#374151">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+            background:${p.color};margin-right:4px;vertical-align:middle"></span>${p.label}
+        </div>
+        <div style="flex:1;height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${col};border-radius:5px"></div>
+        </div>
+        <div style="width:36px;text-align:right;font-size:12px;font-weight:800;color:${col}">${pct}%</div>
+        <div style="font-size:9px;color:#9ca3af;width:26px;text-align:right">${sr.t}球</div>
+      </div>`;
+    }).filter(Boolean).join('');
+    if(srBars) html += SEC('⑦','球種別のストライク率','#ca8a04')+srBars+'</div>';
+
+    // ── ⑧ 直球被安打直後の初球 ──
+    html += SEC('⑧',`直球被安打直後の初球（${Object.values(afterStraightHit).reduce((a,b)=>a+b,0)}件）`,'#ef4444')
+      +renderPtBars(afterStraightHit)+'</div>';
+
+    // ── ⑨ 変化球被安打直後の初球 ──
+    html += SEC('⑨',`変化球被安打直後の初球（${Object.values(afterBreakHit).reduce((a,b)=>a+b,0)}件）`,'#8b5cf6')
+      +renderPtBars(afterBreakHit)+'</div>';
+
+    // ── ⑩ 四球後の初球 ──
+    html += SEC('⑩',`四球後の初球（${Object.values(afterWalk).reduce((a,b)=>a+b,0)}件）`,'#3b82f6')
+      +renderPtBars(afterWalk)+'</div>';
 
     html += `</div>`;
   }
@@ -5933,7 +5851,7 @@ function HistoryScreen({pitches,onBack,onPitchEdit,undoStack,onUndo}){
             // 作戦/進塁イベント判定
             const isAdv=p.isAdvance;
             const opacity=p.isPickoff?0.65:(isAdv?0.75:1);
-            const advLabels={steal:'盗塁',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',tag_out:'刺殺',caught_stealing:'盗塁死'};
+            const advLabels={steal:'盗塁',double_steal:'ダブルスチール',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',tag_out:'刺殺',caught_stealing:'盗塁死'};
             return (
               <div key={p.id} className="history-item" style={{opacity}}>
                 <span style={{fontSize:12,color:'#475569',width:22,flexShrink:0,textAlign:'center'}}>{sorted.length-i}</span>
@@ -6319,6 +6237,7 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
   const persistPitch=useCallback(async(zone,pt,result,dir=null,hitType=null,runnerKey=null)=>{
     const speedNum=currentSpeed?parseInt(currentSpeed,10):null;
     const isAdvance = result==='steal'||result==='delayed'||result==='hitrun'||
+                      result==='double_steal'||
                       result==='pb'||result==='wp'||result==='tag_out'||
                       result==='caught_stealing';
     const ac=lineup.length||9;
@@ -6858,7 +6777,7 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
           padding:'5px 8px',borderRadius:7,
           background:'rgba(6,182,212,.12)',border:'1px solid rgba(6,182,212,.4)'}}>
           <span style={{fontSize:10,fontWeight:800,color:'#22d3ee',flex:1}}>
-            {'🚀 '+({steal:'盗塁',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',
+            {'🚀 '+({steal:'盗塁',double_steal:'ダブルスチール',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',
               tag_out:'刺殺',caught_stealing:'盗塁死'})[pendingAdvance.type]+' 選択中 → 投球完了で同時記録'}
           </span>
           <button onClick={()=>setPendingAdvance(null)}
@@ -6894,22 +6813,46 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
             </div>
             {/* ② 作戦展開メニュー */}
             {showTactics&&(
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:5,marginBottom:6,
-                padding:6,background:'rgba(6,182,212,.07)',borderRadius:6,
+              <div style={{marginBottom:6,padding:6,background:'rgba(6,182,212,.07)',borderRadius:6,
                 border:'1px dashed rgba(6,182,212,.4)'}}>
-                {[
-                  {id:'steal', l:'盗塁'},
-                  {id:'delayed',l:'ディレード'},
-                  {id:'hitrun', l:'エンドラン'},
-                ].map(t=>(
-                  <button key={t.id}
-                    onClick={()=>handleSetPending(t.id)}
-                    style={{padding:'8px 4px',borderRadius:6,border:'1.5px solid #06b6d4',
-                      background:'#0f172a',color:'#67e8f9',fontSize:11,fontWeight:700,
-                      cursor:'pointer',fontFamily:'inherit',lineHeight:1.2}}>
-                    {t.l}
-                  </button>
-                ))}
+                {/* 保留（投球と同時記録） */}
+                <div style={{fontSize:9,color:'#67e8f9',fontWeight:700,marginBottom:4}}>
+                  ▶ 投球と同時に記録（保留）
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:4,marginBottom:8}}>
+                  {[
+                    {id:'steal',        l:'盗塁'},
+                    {id:'double_steal', l:'ダブルスチール'},
+                    {id:'delayed',      l:'ディレード'},
+                    {id:'hitrun',       l:'エンドラン'},
+                  ].map(t=>(
+                    <button key={t.id}
+                      onClick={()=>handleSetPending(t.id)}
+                      style={{padding:'8px 3px',borderRadius:6,border:'1.5px solid #06b6d4',
+                        background:'#0f172a',color:'#67e8f9',fontSize:10,fontWeight:700,
+                        cursor:'pointer',fontFamily:'inherit',lineHeight:1.2}}>
+                      {t.l}
+                    </button>
+                  ))}
+                </div>
+                {/* 即時記録（走者アウト） */}
+                <div style={{fontSize:9,color:'#fca5a5',fontWeight:700,marginBottom:4}}>
+                  ✕ 走者アウト（即時記録）
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}}>
+                  {[
+                    {id:'caught_stealing', l:'盗塁死'},
+                    {id:'tag_out',         l:'刺殺(走塁)'},
+                  ].map(t=>(
+                    <button key={t.id}
+                      onClick={()=>handleRecordTactic(t.id)}
+                      style={{padding:'8px 4px',borderRadius:6,border:'1.5px solid #ef4444',
+                        background:'#3f0a0a',color:'#fca5a5',fontSize:11,fontWeight:700,
+                        cursor:'pointer',fontFamily:'inherit',lineHeight:1.2}}>
+                      {t.l}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {/* 保留中の進塁イベント バッジ */}
@@ -6918,7 +6861,7 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
                 padding:'6px 10px',borderRadius:7,
                 background:'rgba(6,182,212,.12)',border:'1.5px solid rgba(6,182,212,.5)'}}>
                 <span style={{fontSize:11,fontWeight:800,color:'#22d3ee'}}>
-                  {'🚀 '+({steal:'盗塁',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',
+                  {'🚀 '+({steal:'盗塁',double_steal:'ダブルスチール',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',
                     tag_out:'刺殺',caught_stealing:'盗塁死'})[pendingAdvance.type]+' を選択中'}
                   {pendingAdvance.runnerKey&&<span style={{fontSize:9,color:'#94a3b8',marginLeft:4}}>
                     {`(${({first:'1塁',second:'2塁',third:'3塁'})[pendingAdvance.runnerKey]}走者)`}
@@ -7081,7 +7024,7 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
           <div className="modal" style={{maxWidth:340}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
               <h3 style={{fontSize:16}}>
-                {({steal:'盗塁',delayed:'ディレード',tag_out:'刺殺',caught_stealing:'盗塁死',pickoff_out:'牽制死',squeeze_out:'スクイズ(走者アウト)'}[runnerSelector.tactic]||runnerSelector.tactic)}
+                {({steal:'盗塁',double_steal:'ダブルスチール',delayed:'ディレード',tag_out:'刺殺',caught_stealing:'盗塁死',pickoff_out:'牽制死',squeeze_out:'スクイズ(走者アウト)'}[runnerSelector.tactic]||runnerSelector.tactic)}
                 <span style={{fontSize:11,color:'#94a3b8',marginLeft:8}}>対象走者を選択</span>
               </h3>
               <button className="btn btn-secondary btn-sm" onClick={()=>setRunnerSelector(null)}>×</button>
