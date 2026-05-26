@@ -184,6 +184,8 @@ const RESULT_CATS=[
      {id:'double_adv', label:'二塁打(走者+1)'},
      {id:'triple', label:'三塁打'},
      {id:'hr', label:'本塁打'},
+     {id:'inside_hr', label:'ランニング本塁打'},
+     {id:'ground_rule_2b', label:'エンタイトル二塁打', noDir:true},
    ]},
   {id:'out', label:'アウト', color:'#ef4444', cls:'out',
    items:[
@@ -195,6 +197,8 @@ const RESULT_CATS=[
      {id:'bunt_fly', label:'バントフライ'},
      {id:'safety_out', label:'セーフティバント（アウト）'},
      {id:'def_int', label:'守備妨害（打者）', noDir:true},
+     {id:'infield_fly', label:'インフィールドフライ', noDir:true},
+     {id:'force_home', label:'本塁封殺', noDir:true},
      // ── 刺殺（走者がアウト・打席継続）──
      {id:'tag_out', label:'刺殺（走塁）', noDir:true, isAdvance:true},
      {id:'caught_stealing', label:'盗塁死', noDir:true, isAdvance:true},
@@ -225,12 +229,17 @@ const RESULT_CATS=[
      {id:'sac_fly', label:'犠飛（犠牲フライ）'},
      {id:'squeeze_out', label:'スクイズ(走者アウト・打者セーフ)', noDir:true},
    ]},
-  {id:'reached',label:'出塁（エラー）',color:'#14b8a6', cls:'reached',
+  {id:'reached',label:'出塁（エラー・FC等）',color:'#14b8a6', cls:'reached',
    items:[
-     {id:'if_go_err', label:'内野ゴロエラー'},
+     {id:'if_go_err',  label:'内野ゴロエラー'},
      {id:'if_fly_err', label:'内野フライエラー'},
      {id:'of_fly_err', label:'外野フライエラー'},
-     {id:'bunt_err', label:'バントエラー'},
+     {id:'bunt_err',   label:'バントエラー'},
+     {id:'fc',          label:'フィルダースチョイス（野選）', noDir:true},
+     {id:'dp_broken',   label:'ゲッツー崩れ（打者セーフ）',   noDir:true},
+     {id:'uncaught_k',  label:'振り逃げ',                     noDir:true},
+     {id:'throw_err',   label:'送球エラー',                   noDir:true},
+     {id:'obstruction', label:'走塁妨害で出塁',               noDir:true},
    ]},
   {id:'advance',label:'進塁', color:'#06b6d4', cls:'adv',
    items:[
@@ -240,11 +249,14 @@ const RESULT_CATS=[
      {id:'hitrun',       label:'エンドラン',      noDir:true, isAdvance:true},
      {id:'pb',           label:'PB',             noDir:true, isAdvance:true},
      {id:'wp',           label:'WP',             noDir:true, isAdvance:true},
+     {id:'balk',         label:'ボーク',          noDir:true, isAdvance:true},
+     {id:'overrun',      label:'オーバーラン刺殺', noDir:true, isAdvance:true},
    ]},
   {id:'bb', label:'四死球', color:'#f97316', cls:'bb',
    items:[
      {id:'walk', label:'四球'},
      {id:'hbp', label:'死球'},
+     {id:'ibb', label:'故意四球（敬遠）', noDir:true},
    ]},
   {id:'so', label:'三振', color:'#ef4444', cls:'so',
    items:[
@@ -371,7 +383,7 @@ function nextState(result,g,extra={}){
   } else if(r==='looking'||r==='swinging'){
     outs++; atEnd=true; balls=0; strikes=0;
   // ── 四死球 ──
-  } else if(r==='walk'||r==='hbp'){
+  } else if(r==='walk'||r==='hbp'||r==='ibb'){
     walkAdvance(); atEnd=true; balls=0; strikes=0;
   // ── 安打 ──
   } else if(r==='single'){
@@ -388,11 +400,22 @@ function nextState(result,g,extra={}){
     addRun(advance(3)); runners.second=true; atEnd=true; balls=0; strikes=0;
   } else if(r==='triple'){
     addRun(advance(3)); runners.third=true; atEnd=true; balls=0; strikes=0;
-  } else if(r==='hr'){
+  } else if(r==='hr'||r==='inside_hr'){
     addRun(advance(4)+1); atEnd=true; balls=0; strikes=0;
+  } else if(r==='ground_rule_2b'){
+    // エンタイトル二塁打: ルール上 走者は2個進塁まで (3塁走者・2塁走者は得点)
+    addRun(advance(2)); runners.second=true; atEnd=true; balls=0; strikes=0;
   // ── 凡打（アウト）──
-  } else if(r==='if_go'||r==='if_fly'||r==='of_fly'||r==='if_liner'||r==='of_liner'||r==='bunt_fly'||r==='safety_out'||r==='def_int'){
+  } else if(r==='if_go'||r==='if_fly'||r==='of_fly'||r==='if_liner'||r==='of_liner'||r==='bunt_fly'||r==='safety_out'||r==='def_int'||r==='infield_fly'){
     outs++; atEnd=true; balls=0; strikes=0;
+  // ── 本塁封殺: 3塁走者アウト・他走者1進塁・打者1塁 ──
+  } else if(r==='force_home'){
+    outs++;
+    runners.third=false; // 3塁走者本塁封殺
+    if(runners.second){ runners.third=true; runners.second=false; }
+    if(runners.first){ runners.second=true; runners.first=false; }
+    runners.first=true; // 打者1塁
+    atEnd=true; balls=0; strikes=0;
   // ── 妨害 ──
   } else if(r==='bat_int'){
     walkAdvance(); atEnd=true; balls=0; strikes=0; // 打撃妨害: 打者一塁
@@ -417,11 +440,28 @@ function nextState(result,g,extra={}){
     outs++;
     if(runners.third){ runners.third=false; addRun(1); }
     atEnd=true; balls=0; strikes=0;
-  // ── 出塁（エラー）──
-  } else if(r==='if_go_err'||r==='if_fly_err'||r==='of_fly_err'||r==='bunt_err'){
+  // ── 出塁（エラー・走塁妨害等）──
+  } else if(r==='if_go_err'||r==='if_fly_err'||r==='of_fly_err'||r==='bunt_err'||r==='uncaught_k'||r==='throw_err'||r==='obstruction'){
     addRun(advance(1)); runners.first=true; atEnd=true; balls=0; strikes=0;
-  // ── 刺殺・盗塁死（走者1人アウト・打席継続・カウント維持）──
-  } else if(r==='tag_out'||r==='caught_stealing'){
+  // ── フィールダースチョイス / ゲッツー崩れ（走者1人アウト・打者1塁セーフ）──
+  } else if(r==='fc'||r==='dp_broken'){
+    outs++;
+    const k=extra.runnerKey;
+    if(k && runners[k]){ runners[k]=false; }
+    else {
+      if(runners.first) runners.first=false;
+      else if(runners.second) runners.second=false;
+      else if(runners.third) runners.third=false;
+    }
+    addRun(advance(1)); runners.first=true; atEnd=true; balls=0; strikes=0;
+  // ── ボーク（全走者1進塁・打席継続）──
+  } else if(r==='balk'){
+    if(runners.third){ addRun(1); runners.third=false; }
+    if(runners.second){ runners.third=true; runners.second=false; }
+    if(runners.first){ runners.second=true; runners.first=false; }
+    atEnd=false;
+  // ── 刺殺・盗塁死・オーバーラン刺殺（走者1人アウト・打席継続・カウント維持）──
+  } else if(r==='tag_out'||r==='caught_stealing'||r==='overrun'){
     outs++;
     // ② extra.runnerKeyで指定された走者を優先、なければ既存ロジック
     const k=extra.runnerKey;
@@ -804,8 +844,7 @@ function detectInsights(pitches){
       if(!p.pt) return;
       if(!ptStat[p.pt])ptStat[p.pt]={t:0,k:0};
       ptStat[p.pt].t++;
-      const cat=RESULT_CAT_MAP[p.result];
-      if(cat==='strike'||cat==='so') ptStat[p.pt].k++;
+      if(isStrikeResult(p.result)) ptStat[p.pt].k++;
     });
     Object.entries(ptStat).forEach(([id,v])=>{
       if(v.t<5) return;
@@ -1097,10 +1136,13 @@ function mirrorZone(z){
 // ストライク: 見逃し/空振り/ファール + 三振 + 打球(in-play: 安打/凡打/犠打飛/出塁エラー)
 // ボール扱い: ボール判定 + 四死球
 // 進塁(steal/PB/WP)・刺殺は isAdvance フラグで投球外として除外（呼び出し側でフィルタ）
+// ストライク率定義: ストライク投球数 ÷ 有効投球数 × 100
+// ■ストライク: 見逃しS・空振りS・ファール・バントファール・インプレー打球・見逃し三振・空振り三振
+// ■ボール: ボール・死球・四球 (四死球カテゴリ)
+// ■除外: 牽制球(isPickoff)・進塁イベント(isAdvance) ← 呼び出し側で filterしてから渡す
 function isStrikeResult(result){
   const cat=RESULT_CAT_MAP[result];
   if(!cat) return false;
-  // ストライクとカウントされるカテゴリ
   return cat==='strike' || cat==='so'
       || cat==='hit' || cat==='out'
       || cat==='sac' || cat==='reached';
@@ -1113,7 +1155,9 @@ function getBattedBallType(p){
   const r=p.result;
   if(!r) return null;
   // ゴロ系
-  if(r==='if_go'||r==='sac_bunt'||r==='if_go_err'||r==='bunt_err'||r==='safety_out') return 'gd';
+  if(r==='if_go'||r==='sac_bunt'||r==='if_go_err'||r==='bunt_err'||r==='safety_out'||r==='force_home') return 'gd';
+  // インフィールドフライ → フライ系
+  if(r==='infield_fly') return 'fl';
   // フライ系
   if(r==='if_fly'||r==='of_fly'||r==='bunt_fly'||r==='sac_fly'||r==='if_fly_err'||r==='of_fly_err') return 'fl';
   // ライナー系
@@ -1401,8 +1445,9 @@ function FieldDiagram({value,onChange}){
 }
 
 // ── Line Score (イニング別スコアボード) ──
-function LineScore({pitches, game, gs, compact=false, editable=false, onSaveManual}){
+function LineScore({pitches, game, gs, compact=false, editable=false, onSaveManual, onInningSelect}){
   const {innings,maxInn}=useMemo(()=>computeLineScore(pitches),[pitches]);
+  const [inningPopup,setInningPopup]=useState(null); // タップしたイニング番号
   const manualMap=game?.lineScoreManual||{};
   // 表示値取得: 手動値があれば優先、なければ自動計算
   const getDisplay=(i,sd,tp)=>{
@@ -1490,8 +1535,14 @@ function LineScore({pitches, game, gs, compact=false, editable=false, onSaveManu
                 {editable?'R/H':'　'}
               </th>
               {cols.map(i=>(
-                <th key={i} style={{...cell,color:i===curInn?'#3b82f6':'#94a3b8',
-                  background:i===curInn?'rgba(59,130,246,.1)':'transparent'}}>{i}</th>
+                <th key={i}
+                  onClick={onInningSelect?()=>setInningPopup(inningPopup===i?null:i):undefined}
+                  style={{...cell,color:i===curInn?'#3b82f6':'#94a3b8',
+                    background:i===curInn?'rgba(59,130,246,.1)':'transparent',
+                    cursor:onInningSelect?'pointer':'default',
+                    position:'relative',userSelect:'none'}}>{i}
+                  {onInningSelect&&<span style={{fontSize:7,color:'#475569',display:'block',lineHeight:1}}>▼</span>}
+                </th>
               ))}
               <th style={{...cell,color:'#e2e8f0',fontWeight:800,borderLeft:'2px solid #334155'}}>R</th>
               <th style={{...cell,color:'#94a3b8'}}>H</th>
@@ -1569,6 +1620,27 @@ function LineScore({pitches, game, gs, compact=false, editable=false, onSaveManu
           </tbody>
         </table>
       </div>
+      {/* イニングジャンプ ポップアップ */}
+      {inningPopup!=null&&(
+        <div style={{padding:'8px 10px',background:'#1e3a5f',borderTop:'1px solid #2563eb',
+          display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span style={{fontSize:11,color:'#93c5fd',fontWeight:700,flex:'0 0 auto'}}>
+            {inningPopup}回 へジャンプ:
+          </span>
+          <button onClick={()=>{onInningSelect?.(inningPopup,'top');setInningPopup(null);}}
+            style={{padding:'4px 14px',borderRadius:6,border:'1px solid #3b82f6',
+              background:'rgba(59,130,246,.2)',color:'#93c5fd',fontSize:12,fontWeight:800,
+              cursor:'pointer',fontFamily:'inherit'}}>表</button>
+          <button onClick={()=>{onInningSelect?.(inningPopup,'bottom');setInningPopup(null);}}
+            style={{padding:'4px 14px',borderRadius:6,border:'1px solid #f97316',
+              background:'rgba(249,115,22,.2)',color:'#fdba74',fontSize:12,fontWeight:800,
+              cursor:'pointer',fontFamily:'inherit'}}>裏</button>
+          <button onClick={()=>setInningPopup(null)}
+            style={{padding:'4px 10px',borderRadius:6,border:'1px solid #475569',
+              background:'transparent',color:'#64748b',fontSize:11,
+              cursor:'pointer',fontFamily:'inherit',marginLeft:'auto'}}>✕</button>
+        </div>
+      )}
       {editable&&(
         <div style={{padding:'4px 8px',background:'#1e293b',fontSize:9,color:'#94a3b8',
           borderTop:'1px solid #334155'}}>
@@ -1730,17 +1802,18 @@ function SprayChart({pitches}){
           const x=pos.x+Math.cos(angle*Math.PI/180)*radius;
           const y=pos.y+Math.sin(angle*Math.PI/180)*radius;
           const cat=RESULT_CAT_MAP[p.result];
-          const color=cat==='hit'?'#60a5fa':cat==='out'?'#ef4444':'#a78bfa';
+          const color=cat==='hit'?'#60a5fa':cat==='out'?'#ef4444':p.result==='sac_fly'?'#f97316':'#22c55e';
           return (
             <circle key={p.id} cx={x} cy={y} r="3.5" fill={color}
               stroke="rgba(0,0,0,.5)" strokeWidth=".7"/>
           );
         })}
       </svg>
-      <div style={{display:'flex',gap:10,justifyContent:'center',marginTop:6,fontSize:10,color:'#94a3b8'}}>
-        <span><span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#60a5fa'}}/> 安打</span>
-        <span><span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#ef4444'}}/> 凡打</span>
-        <span><span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#a78bfa'}}/> 犠打犠飛</span>
+      <div style={{display:'flex',gap:10,justifyContent:'center',marginTop:6,fontSize:11,color:'#94a3b8',flexWrap:'wrap'}}>
+        <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:'#60a5fa',verticalAlign:'middle',marginRight:3}}/> 安打</span>
+        <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:'#ef4444',verticalAlign:'middle',marginRight:3}}/> 凡打</span>
+        <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:'#22c55e',verticalAlign:'middle',marginRight:3}}/> 犠打</span>
+        <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:'#f97316',verticalAlign:'middle',marginRight:3}}/> 犠飛</span>
       </div>
       <div style={{fontSize:10,color:'#64748b',textAlign:'center',marginTop:4}}>{dots.length}打球</div>
     </div>
@@ -1764,35 +1837,35 @@ function PitchSequenceChart({pitches, pitcherName}){
   return (
     <div>
       <div className="card" style={{marginBottom:10}}>
-        <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:8}}>初球の球種傾向（{firstTotal}打席）</div>
+        <div style={{fontSize:14,fontWeight:800,color:'#e2e8f0',marginBottom:10}}>初球の球種傾向（{firstTotal}打席）</div>
         {PT.filter(p=>seq.firstPitch[p.id]>0).sort((a,b)=>seq.firstPitch[b.id]-seq.firstPitch[a.id]).map(p=>{
           const c=seq.firstPitch[p.id];
           const pct=Math.round(c/firstTotal*100);
           return (
-            <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-              <PitchDot ptId={p.id} size={12}/>
-              <span style={{fontSize:11,color:p.color,minWidth:70}}>{p.label}</span>
-              <div style={{flex:1,height:8,background:'#0f172a',borderRadius:3,overflow:'hidden'}}>
+            <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
+              <PitchDot ptId={p.id} size={13}/>
+              <span style={{fontSize:13,color:p.color,minWidth:80}}>{p.label}</span>
+              <div style={{flex:1,height:9,background:'#0f172a',borderRadius:3,overflow:'hidden'}}>
                 <div style={{width:`${pct}%`,height:'100%',background:p.color}}/>
               </div>
-              <span style={{fontSize:10,fontWeight:700,color:p.color,minWidth:34,textAlign:'right'}}>{pct}%</span>
+              <span style={{fontSize:13,fontWeight:700,color:p.color,minWidth:36,textAlign:'right'}}>{pct}%</span>
             </div>
           );
         })}
-        {firstTotal===0&&<div style={{fontSize:11,color:'#475569',textAlign:'center'}}>記録なし</div>}
+        {firstTotal===0&&<div style={{fontSize:12,color:'#475569',textAlign:'center'}}>記録なし</div>}
       </div>
       <div className="card">
-        <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:8}}>球種遷移（前球→次球）</div>
+        <div style={{fontSize:14,fontWeight:800,color:'#e2e8f0',marginBottom:10}}>球種遷移（前球→次球）</div>
         {fromList.map(p=>{
           const t=seq.trans[p.id]||{};
           const total=Object.values(t).reduce((a,b)=>a+b,0);
           const tops=PT.filter(x=>t[x.id]>0).sort((a,b)=>t[b.id]-t[a.id]).slice(0,3);
           return (
-            <div key={p.id} style={{marginBottom:8,padding:'6px 8px',background:'#0f172a',borderRadius:6}}>
-              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                <PitchDot ptId={p.id} size={11}/>
-                <span style={{fontSize:11,color:p.color,fontWeight:700}}>{p.label}</span>
-                <span style={{fontSize:10,color:'#64748b'}}>後 ({total}回)</span>
+            <div key={p.id} style={{marginBottom:10,padding:'8px 10px',background:'#0f172a',borderRadius:6}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
+                <PitchDot ptId={p.id} size={13}/>
+                <span style={{fontSize:13,color:p.color,fontWeight:700}}>{p.label}</span>
+                <span style={{fontSize:11,color:'#64748b'}}>後 ({total}回)</span>
               </div>
               <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                 {tops.map(np=>{
@@ -1800,10 +1873,10 @@ function PitchSequenceChart({pitches, pitcherName}){
                   const pct=Math.round(c/total*100);
                   return (
                     <span key={np.id} style={{
-                      display:'inline-flex',alignItems:'center',gap:3,
-                      fontSize:10,padding:'2px 6px',borderRadius:10,
+                      display:'inline-flex',alignItems:'center',gap:4,
+                      fontSize:12,padding:'3px 8px',borderRadius:10,
                       background:`${np.color}22`,border:`1px solid ${np.color}66`,color:np.color}}>
-                      <span style={{width:6,height:6,borderRadius:'50%',background:np.color}}/>
+                      <span style={{width:7,height:7,borderRadius:'50%',background:np.color}}/>
                       {np.short} {pct}%
                     </span>
                   );
@@ -1812,7 +1885,7 @@ function PitchSequenceChart({pitches, pitcherName}){
             </div>
           );
         })}
-        {fromList.length===0&&<div style={{fontSize:11,color:'#475569',textAlign:'center'}}>記録なし</div>}
+        {fromList.length===0&&<div style={{fontSize:12,color:'#475569',textAlign:'center'}}>記録なし</div>}
       </div>
     </div>
   );
@@ -1840,8 +1913,8 @@ function CountHeatmap({pitches}){
         return (
           <div key={k} className="card" style={{padding:8}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-              <span style={{fontSize:10,fontWeight:700,color:c}}>{l}</span>
-              <span style={{fontSize:10,color:'#64748b'}}>{total}球</span>
+              <span style={{fontSize:11,fontWeight:700,color:c}}>{l}</span>
+              <span style={{fontSize:11,color:'#64748b'}}>{total}球</span>
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:1,alignItems:'center'}}>
               {ZONE_GRID.map((row,ri)=>(
@@ -2312,47 +2385,60 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
     {id:'bunt_foul',                      l:c.strikes>=2?'バント三振':'バントファール', sub:c.strikes>=2?'S→アウト':'S+1', color:'#c084fc',bg:'#2d1b4e'},
   ];
   const OUT_CHOICES=[
-    {id:'if_go',          l:'内野ゴロ',       color:'#ef4444',bg:'#3f0a0a'},
-    {id:'if_fly',         l:'内野フライ',     color:'#f97316',bg:'#3b1506'},
-    {id:'of_fly',         l:'外野フライ',     color:'#f59e0b',bg:'#3f2e06'},
-    {id:'if_liner',       l:'内野ライナー',   color:'#ef4444',bg:'#3f0a0a'},
-    {id:'of_liner',       l:'外野ライナー',   color:'#f97316',bg:'#3b1506'},
-    {id:'looking',        l:'見逃三振',       color:'#eab308',bg:'#3f2e06'},
-    {id:'swinging',       l:'空振三振',       color:'#eab308',bg:'#3f2e06'},
-    {id:'bunt_fly',       l:'バントフライ',   color:'#a78bfa',bg:'#2d1b4e'},
-    {id:'safety_out',     l:'セーフティ凡退', color:'#94a3b8',bg:'#1e293b'},
-    {id:'def_int',        l:'守備妨害',       color:'#94a3b8',bg:'#1e293b'},
-    {id:'tag_out',        l:'刺殺(走塁)',     color:'#06b6d4',bg:'#0c1a2e'},
-    {id:'caught_stealing',l:'盗塁死',         color:'#06b6d4',bg:'#0c1a2e'},
+    {id:'if_go',          l:'内野ゴロ',         color:'#ef4444',bg:'#3f0a0a'},
+    {id:'if_fly',         l:'内野フライ',       color:'#f97316',bg:'#3b1506'},
+    {id:'of_fly',         l:'外野フライ',       color:'#f59e0b',bg:'#3f2e06'},
+    {id:'if_liner',       l:'内野ライナー',     color:'#ef4444',bg:'#3f0a0a'},
+    {id:'of_liner',       l:'外野ライナー',     color:'#f97316',bg:'#3b1506'},
+    {id:'looking',        l:'見逃三振',         color:'#eab308',bg:'#3f2e06'},
+    {id:'swinging',       l:'空振三振',         color:'#eab308',bg:'#3f2e06'},
+    {id:'bunt_fly',       l:'バントフライ',     color:'#a78bfa',bg:'#2d1b4e'},
+    {id:'safety_out',     l:'セーフティ凡退',   color:'#94a3b8',bg:'#1e293b'},
+    {id:'def_int',        l:'守備妨害',         color:'#94a3b8',bg:'#1e293b'},
+    {id:'infield_fly',    l:'インフィールドF',  color:'#fbbf24',bg:'#2a1800'},
+    {id:'force_home',     l:'本塁封殺',         color:'#dc2626',bg:'#3f0a0a'},
+    {id:'tag_out',        l:'刺殺(走塁)',       color:'#06b6d4',bg:'#0c1a2e'},
+    {id:'caught_stealing',l:'盗塁死',           color:'#06b6d4',bg:'#0c1a2e'},
   ];
   const HIT_CHOICES=[
-    {id:'single',      l:'単打',         color:'#60a5fa',bg:'#0c1a2e'},
-    {id:'single_adv2', l:'単打(走者+2)', color:'#93c5fd',bg:'#0c1a2e'},
-    {id:'single_adv3', l:'単打(走者+3)', color:'#bfdbfe',bg:'#0c1522'},
-    {id:'double',      l:'二塁打',         color:'#38bdf8',bg:'#0c1a2e'},
-    {id:'double_adv',  l:'二塁打(走者+1)', color:'#7dd3fc',bg:'#0c1a2e'},
-    {id:'triple',      l:'三塁打',         color:'#22d3ee',bg:'#021a1e'},
-    {id:'hr',          l:'本塁打',       color:'#f97316',bg:'#3b1506'},
+    {id:'single',          l:'単打',           color:'#60a5fa',bg:'#0c1a2e'},
+    {id:'single_adv2',     l:'単打(走者+2)',   color:'#93c5fd',bg:'#0c1a2e'},
+    {id:'single_adv3',     l:'単打(走者+3)',   color:'#bfdbfe',bg:'#0c1522'},
+    {id:'double',          l:'二塁打',         color:'#38bdf8',bg:'#0c1a2e'},
+    {id:'double_adv',      l:'二塁打(走者+1)', color:'#7dd3fc',bg:'#0c1a2e'},
+    {id:'ground_rule_2b',  l:'エンタイトル2B', color:'#0ea5e9',bg:'#0c1a2e'},
+    {id:'triple',          l:'三塁打',         color:'#22d3ee',bg:'#021a1e'},
+    {id:'hr',              l:'本塁打',         color:'#f97316',bg:'#3b1506'},
+    {id:'inside_hr',       l:'ランニングHR',   color:'#fbbf24',bg:'#2a1800'},
   ];
   const REACHED_CHOICES=[
-    {id:'if_go_err',  l:'内野ゴロエラー',   color:'#14b8a6',bg:'#022c22'},
-    {id:'if_fly_err', l:'内野フライエラー', color:'#14b8a6',bg:'#022c22'},
-    {id:'of_fly_err', l:'外野フライエラー', color:'#14b8a6',bg:'#022c22'},
-    {id:'bunt_err',   l:'バントエラー',     color:'#14b8a6',bg:'#022c22'},
+    {id:'if_go_err',   l:'内野ゴロエラー',       color:'#14b8a6',bg:'#022c22'},
+    {id:'if_fly_err',  l:'内野フライエラー',     color:'#14b8a6',bg:'#022c22'},
+    {id:'of_fly_err',  l:'外野フライエラー',     color:'#14b8a6',bg:'#022c22'},
+    {id:'bunt_err',    l:'バントエラー',         color:'#14b8a6',bg:'#022c22'},
+    {id:'throw_err',   l:'送球エラー',           color:'#0d9488',bg:'#022c22'},
+    {id:'fc',          l:'野選(FC)',             color:'#22d3ee',bg:'#021a1e'},
+    {id:'dp_broken',   l:'ゲッツー崩れ',         color:'#f97316',bg:'#3b1506'},
+    {id:'uncaught_k',  l:'振り逃げ',             color:'#a78bfa',bg:'#2d1b4e'},
+    {id:'obstruction', l:'走塁妨害で出塁',       color:'#f43f5e',bg:'#2a0614'},
   ];
   const ADV_CHOICES=[
     {id:'steal',          l:'盗塁',           color:'#06b6d4',bg:'#0c1a2e'},
     {id:'double_steal',   l:'ダブルスチール',  color:'#22d3ee',bg:'#021a1e'},
     {id:'pb',             l:'PB',             color:'#06b6d4',bg:'#0c1a2e'},
     {id:'wp',             l:'WP',             color:'#06b6d4',bg:'#0c1a2e'},
+    {id:'balk',           l:'ボーク',          color:'#fbbf24',bg:'#2a1800'},
     {id:'caught_stealing',l:'盗塁死',         color:'#f97316',bg:'#3b1506'},
     {id:'tag_out',        l:'刺殺(走塁)',      color:'#ef4444',bg:'#3f0a0a'},
+    {id:'overrun',        l:'オーバーラン刺殺', color:'#dc2626',bg:'#3f0a0a'},
   ];
   const TACTICS_CHOICES=[
-    {id:'steal',        l:'盗塁',           color:'#67e8f9',bg:'#021a1e'},
-    {id:'double_steal', l:'ダブルスチール',  color:'#22d3ee',bg:'#021a1e'},
-    {id:'delayed',      l:'ディレード',     color:'#67e8f9',bg:'#021a1e'},
-    {id:'hitrun',       l:'エンドラン',     color:'#67e8f9',bg:'#021a1e'},
+    {id:'steal',          l:'盗塁',             color:'#67e8f9',bg:'#021a1e'},
+    {id:'double_steal',   l:'ダブルスチール',    color:'#22d3ee',bg:'#021a1e'},
+    {id:'delayed',        l:'ディレード',       color:'#67e8f9',bg:'#021a1e'},
+    {id:'hitrun',         l:'エンドラン',       color:'#67e8f9',bg:'#021a1e'},
+    {id:'tiebreak_12',    l:'タイブレーク(1・2塁)', color:'#fbbf24',bg:'#2a1800'},
+    {id:'tiebreak_23',    l:'タイブレーク(2・3塁)', color:'#fbbf24',bg:'#2a1800'},
   ];
   const SAC_CHOICES=[
     {id:'sac_bunt',    l:'犠打',               color:'#a78bfa',bg:'#2d1b4e'},
@@ -2390,8 +2476,8 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
     strike:{label:'ストライク — 種類を選択', color:'#eab308', items:STRIKE_CHOICES, cols:2, pad:'22px 8px', fs:18, withSub:true},
     out:   {label:'アウト — 種類を選択',    color:'#ef4444', items:OUT_CHOICES,    cols:3, pad:'18px 4px', fs:15},
     hit:   {label:'安打 — 種類を選択',      color:'#60a5fa', items:HIT_CHOICES,    cols:2, pad:'22px 8px', fs:18},
-    reached:{label:'出塁(エラー) — 種類を選択',color:'#14b8a6',items:REACHED_CHOICES,cols:2,pad:'20px 8px',fs:16},
-    adv:   {label:'進塁 — 種類を選択',      color:'#06b6d4', items:ADV_CHOICES,    cols:3, pad:'20px 4px', fs:16},
+    reached:{label:'出塁(エラー/FC等) — 種類を選択',color:'#14b8a6',items:REACHED_CHOICES,cols:2,pad:'16px 6px',fs:14},
+    adv:   {label:'進塁 — 種類を選択',           color:'#06b6d4', items:ADV_CHOICES,    cols:3, pad:'18px 4px', fs:15},
     tactics:{label:'作戦 — 種類を選択',     color:'#67e8f9', items:TACTICS_CHOICES,cols:3, pad:'20px 4px', fs:16},
     sac:   {label:'犠打飛 — 種類を選択',    color:'#a78bfa', items:SAC_CHOICES,    cols:3, pad:'20px 4px', fs:16},
     dp:    {label:'ゲッツー / トリプルプレー — 種類を選択', color:'#dc2626', items:DP_CHOICES, cols:3, pad:'18px 4px', fs:15},
@@ -2484,11 +2570,12 @@ function DetailResultPicker({pZone, pPt, gs, onBack, onSelect}){
           ()=>setFullStep('out'))}
       </div>
 
-      {/* Row2: 安打 / 四球 / 死球 */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:4,marginBottom:4}}>
+      {/* Row2: 安打 / 四球 / 死球 / 故意四球 */}
+      <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr',gap:4,marginBottom:4}}>
         {bigBtn('#60a5fa','#0c1a2e','安打','種類を選択 →',()=>setFullStep('hit'))}
         {bigBtn('#22c55e','#052e16','四球','打席終了',()=>onSelect('walk'))}
         {bigBtn('#ec4899','#1f0513','死球','打席終了',()=>onSelect('hbp'))}
+        {bigBtn('#a78bfa','#2d1b4e','敬遠','故意四球',()=>onSelect('ibb'))}
       </div>
 
       {/* Row3: 出塁 / 進塁 / 作戦 */}
@@ -2700,7 +2787,7 @@ function ScoreEditor({gs,onSave,onClose}){
 }
 
 // ── Lineup Screen (2チーム対応) ──
-function LineupScreen({game,onBack}){
+function LineupScreen({game,onBack,onGameUpdate}){
   const mkLineup=()=>Array.from({length:9},(_,i)=>({
     order:i+1, number:'', name:'', pos:POSITIONS[i]||'投手', hand:'R'
   }));
@@ -2727,11 +2814,27 @@ function LineupScreen({game,onBack}){
   const teamColor=tab==='away'?AWAY_COLOR:HOME_COLOR;
 
   const save=async()=>{
-    await dbPut('games',{
-      ...game, lineupAway, lineupHome, pitcherAway, pitcherHome,
+    const updated={...game, lineupAway, lineupHome, pitcherAway, pitcherHome,
       lineup:lineupAway, // 後方互換
-      subs,
-    });
+      subs};
+    await dbPut('games',updated);
+    onGameUpdate?.(updated); // App の game state を即時更新 → bh が正しく反映される
+
+    // ── 既存投球の bh を遡及修正（打者名→利き手マップで一括更新）──
+    // 過去に hand 未設定のまま記録された投球を正しい bh に修正する
+    const handMap={};
+    [...lineupAway, ...lineupHome].forEach(p=>{if(p.name&&p.hand)handMap[p.name]=p.hand;});
+    subs.forEach(s=>{if(s.name&&s.hand)handMap[s.name]=s.hand;});
+    if(Object.keys(handMap).length>0 && game.id){
+      const ps=await dbGetByIdx('pitches','gid',game.id);
+      for(const p of ps){
+        const correctBh=handMap[p.batter];
+        if(correctBh && p.bh!==correctBh){
+          await dbPut('pitches',{...p,bh:correctBh});
+        }
+      }
+    }
+
     setSaved(true);
     setTimeout(()=>setSaved(false),1500);
   };
@@ -3589,14 +3692,14 @@ function BatterDetailPanel({allPitches, batterName, game}){
       if(!a.result) return;
       r.ab++;
       if(a.result==='single') r.h++;
-      else if(a.result==='double'||a.result==='double_adv'){r.h++;r.db++;}
+      else if(a.result==='double'||a.result==='double_adv'||a.result==='ground_rule_2b'){r.h++;r.db++;}
       else if(a.result==='triple'){r.h++;r.tr++;}
-      else if(a.result==='hr'){r.h++;r.hr++;}
+      else if(a.result==='hr'||a.result==='inside_hr'){r.h++;r.hr++;}
       else if(['looking','swinging'].includes(a.result)) r.so++;
-      else if(a.result==='walk') r.bb++;
+      else if(a.result==='walk'||a.result==='ibb') r.bb++;
       else if(a.result==='hbp') r.hbp++;
       else if(['sac_bunt','sac_fly'].includes(a.result)) r.sac++;
-      else if(['if_go_err','if_fly_err','of_fly_err','bunt_err'].includes(a.result)) r.reached++;
+      else if(['if_go_err','if_fly_err','of_fly_err','bunt_err','fc','dp_broken','uncaught_k','throw_err','obstruction'].includes(a.result)) r.reached++;
       else r.outs++;
     });
     // 公式打率算出: 安打/(打席-四死球-犠打犠飛)
@@ -3814,7 +3917,7 @@ function BatterDetailPanel({allPitches, batterName, game}){
       {/* 打球方向（スプレー） */}
       <div className="card" style={{marginBottom:10}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:6}}>
-          <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>打球方向（スプレーチャート）</span>
+          <span style={{fontSize:14,fontWeight:800,color:'#e2e8f0'}}>打球方向（スプレーチャート）</span>
           <InfoBadge title="スプレーチャート"
             body={'打球がどの方向に飛んだかをフィールド図にプロット。\n• 青=安打\n• 赤=凡打\n• 紫=犠打犠飛\n• 引っ張り/流し打ちの傾向が分かる'}/>
         </div>
@@ -3976,8 +4079,10 @@ function PitcherSelectableView({pitcherStats, filtered, game, hasFilter, emptyMs
 // 投手個別の高度分析: 全打者/対左/対右フィルタ + 球種割合・コース・S率・安打後初球
 // 投手サブセット（バンド別）の各種統計を一括計算
 function computePitcherSubsetStats(allMine, handFilter){
-  // handFilter: null=全打者, 'R'=対右, 'L'=対左
-  const fp = handFilter==null ? allMine : allMine.filter(p=>p.bh===handFilter);
+  // handFilter: null=全打者, 'R'=対右打者, 'L'=対左打者
+  // ※ bh='S'(両打)は vs右・vs左 どちらにも含める
+  const fp = handFilter==null ? allMine
+    : allMine.filter(p=>p.bh===handFilter||(p.bh==='S'));
   const total = fp.length;
   const strikes = fp.filter(p=>{return isStrikeResult(p.result);}).length;
   const sRate = total>0?Math.round(strikes/total*100):0;
@@ -3995,8 +4100,7 @@ function computePitcherSubsetStats(allMine, handFilter){
     if(!p.pt) return;
     if(!ptSR[p.pt]) ptSR[p.pt]={t:0,k:0};
     ptSR[p.pt].t++;
-    const cat=RESULT_CAT_MAP[p.result];
-    if(cat==='strike'||cat==='so') ptSR[p.pt].k++;
+    if(isStrikeResult(p.result)) ptSR[p.pt].k++;
   });
 
   // After-X 初球分析: 打席単位
@@ -4012,7 +4116,7 @@ function computePitcherSubsetStats(allMine, handFilter){
     const last = ab[ab.length-1];
     if(!last) return;
     // ハンドフィルタは「前打席の打者」の手で判定
-    if(handFilter&&last.bh!==handFilter) return;
+    if(handFilter&&last.bh!==handFilter&&last.bh!=='S') return;
     const nextFirst = abMap[abOrder[idx+1]]?.[0];
     if(!nextFirst?.pt) return;
     const cat = RESULT_CAT_MAP[last.result];
@@ -4039,7 +4143,7 @@ function computePitcherSubsetStats(allMine, handFilter){
   });
 
   return {
-    total, sRate, soC, hitC, bbC, avgSpeed, maxSpeed,
+    total, strikes, sRate, soC, hitC, bbC, avgSpeed, maxSpeed,
     ptC, ptSR, afterST, afterBK, afterBB, stTotal, bkTotal, bbTotal,
     countPtMix,
   };
@@ -4061,60 +4165,6 @@ const RUNNER_GROUPS=[
   {k:'full', l:'満塁'},
 ];
 
-// ── 球速推移グラフ ──────────────────────────────────────────
-function VeloTrendChart({pitches}){
-  const pts=pitches.filter(p=>p.speed>0);
-  if(pts.length<3) return null;
-  const speeds=pts.map(p=>p.speed);
-  const minS=Math.min(...speeds), maxS=Math.max(...speeds);
-  const range=maxS-minS||1;
-  const W=320,H=110,padL=27,padR=6,padT=8,padB=18;
-  const cW=W-padL-padR, cH=H-padT-padB;
-  const xS=i=>padL+i/(pts.length-1||1)*cW;
-  const yS=v=>padT+(1-(v-minS)/range)*cH;
-  // イニング境界
-  const bounds=[]; let prev=null;
-  pts.forEach((p,i)=>{
-    const k=`${p.inning}-${p.topBottom}`;
-    if(k!==prev&&i>0) bounds.push(i);
-    prev=k;
-  });
-  const ptMap={}; PT.forEach(p=>{ptMap[p.id]=p;});
-  const line=pts.map((p,i)=>`${xS(i).toFixed(1)},${yS(p.speed).toFixed(1)}`).join(' ');
-  const yTicks=[0,0.5,1].map(t=>({v:Math.round(minS+range*(1-t)),y:padT+t*cH}));
-  return (
-    <div className="card" style={{marginBottom:10}}>
-      <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:4}}>
-        📈 球速推移（{pts.length}球）
-      </div>
-      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:'block'}}>
-        {yTicks.map(t=>(
-          <g key={t.v}>
-            <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke="#1e293b" strokeWidth={1}/>
-            <text x={padL-2} y={t.y+3} textAnchor="end" fill="#475569" fontSize={7}>{t.v}</text>
-          </g>
-        ))}
-        {bounds.map(i=>(
-          <line key={i} x1={xS(i)} y1={padT} x2={xS(i)} y2={padT+cH}
-            stroke="#334155" strokeWidth={0.8} strokeDasharray="2,2"/>
-        ))}
-        <polyline points={line} fill="none" stroke="#334155" strokeWidth={1}/>
-        {pts.map((p,i)=>{
-          const c=(ptMap[p.pt]||{color:'#64748b'}).color;
-          return <circle key={i} cx={xS(i)} cy={yS(p.speed)} r={3} fill={c} opacity={0.9}/>;
-        })}
-      </svg>
-      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:2}}>
-        {PT.filter(p=>pts.some(q=>q.pt===p.id)).map(p=>(
-          <span key={p.id} style={{display:'flex',alignItems:'center',gap:3,fontSize:9}}>
-            <span style={{width:7,height:7,borderRadius:'50%',display:'inline-block',background:p.color}}/>
-            <span style={{color:p.color}}>{p.short}</span>
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ── カウント別傾向インサイト ──────────────────────────────────
 function CountInsightCard({pitches}){
@@ -4147,17 +4197,17 @@ function CountInsightCard({pitches}){
   return (
     <div className="card" style={{marginBottom:10,background:'rgba(234,179,8,.04)',
       border:'1px solid rgba(234,179,8,.3)'}}>
-      <div style={{fontSize:12,fontWeight:700,color:'#fbbf24',marginBottom:8}}>
-        ⚡ 傾向インサイト（75%以上集中）
+      <div style={{fontSize:14,fontWeight:800,color:'#fbbf24',marginBottom:8}}>
+        ⚡ 傾向インサイト
       </div>
       {insights.map((ins,i)=>(
         <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-          padding:'6px 10px',marginBottom:4,borderRadius:7,
-          background:'rgba(0,0,0,.25)',border:`1px solid ${ins.color}44`}}>
-          <span style={{fontSize:12,color:'#e2e8f0',fontWeight:700}}>{ins.lbl}</span>
+          padding:'8px 12px',marginBottom:6,borderRadius:8,
+          background:'#0f172a',borderLeft:`4px solid ${ins.color}`}}>
+          <span style={{fontSize:13,color:'#e2e8f0',fontWeight:700}}>{ins.lbl}</span>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
-            <span style={{fontSize:9,color:'#64748b'}}>{ins.n}球中</span>
-            <span style={{fontSize:16,fontWeight:900,
+            <span style={{fontSize:10,color:'#64748b'}}>{ins.n}球</span>
+            <span style={{fontSize:18,fontWeight:900,
               color:ins.pct>=80?'#ef4444':'#fbbf24'}}>{ins.pct}%</span>
           </div>
         </div>
@@ -4247,20 +4297,19 @@ function CrossGameScreen({onBack}){
                   </div>
                   <div>
                     <div style={{fontSize:22,fontWeight:800,color:'#22c55e'}}>
-                      {stats.total>0?Math.round(stats.strikes/stats.total*100):0}%
+                      {stats.sRate}%
                     </div>
                     <div style={{fontSize:9,color:'#64748b',marginTop:2}}>S率</div>
                   </div>
                   <div>
                     <div style={{fontSize:22,fontWeight:800,color:'#ef4444'}}>
-                      {stats.total>0?Math.round((stats.so||0)/stats.total*100):0}%
+                      {stats.total>0?Math.round((stats.soC||0)/stats.total*100):0}%
                     </div>
                     <div style={{fontSize:9,color:'#64748b',marginTop:2}}>奪三振率</div>
                   </div>
                 </div>
               </div>
               <PitchSpeedCard pitches={mine}/>
-              <VeloTrendChart pitches={mine}/>
               <RunnerSituationCard pitches={mine} groups={byRunner}/>
               <CountInsightCard pitches={mine}/>
             </>
@@ -4299,6 +4348,18 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
     return c;
   },[mine]);
 
+  // 球種別速度データ
+  const speedDataMap = useMemo(()=>{
+    const out={};
+    PT.forEach(pt=>{
+      const ps=mine.filter(p=>p.pt===pt.id&&p.speed>0);
+      if(ps.length===0) return;
+      const speeds=ps.map(p=>p.speed);
+      out[pt.id]={avg:Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length), max:Math.max(...speeds)};
+    });
+    return out;
+  },[mine]);
+
   if(all.total===0){
     return <div style={{textAlign:'center',color:'#475569',padding:20,fontSize:12}}>対象データなし</div>;
   }
@@ -4323,10 +4384,20 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
     </tr>
   );
 
-  // 主要指標
+  // クイックタイム フォーマッター
+  const fmtMs=ms=>{
+    const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000),cs=Math.floor((ms%1000)/10);
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+  };
+  const qtMsArr=quickTimes.map(t=>t.time);
+  const qtAvg=quickTimes.length>0?fmtMs(Math.round(qtMsArr.reduce((a,b)=>a+b,0)/qtMsArr.length)):null;
+  const qtMin=quickTimes.length>0?fmtMs(Math.min(...qtMsArr)):null;
+  const qtMax=quickTimes.length>0?fmtMs(Math.max(...qtMsArr)):null;
+
+  // 主要指標（+ QT統合）
   const summaryCard=(
     <div className="card" style={{marginBottom:10}}>
-      <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:6}}>主要指標</div>
+      <div style={{fontSize:14,fontWeight:800,color:'#e2e8f0',marginBottom:8}}>主要指標</div>
       <table style={tableStyle}>
         <thead>{headRow}</thead>
         <tbody>
@@ -4335,14 +4406,89 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
           {valueRow('三振', all.soC, vsR.soC, vsL.soC, '#ef4444')}
           {valueRow('安打', all.hitC, vsR.hitC, vsL.hitC, '#60a5fa')}
           {valueRow('四死球', all.bbC, vsR.bbC, vsL.bbC, '#f97316')}
-          {valueRow('平均km/h',
-            all.avgSpeed??'–', vsR.avgSpeed??'–', vsL.avgSpeed??'–', '#a78bfa')}
-          {valueRow('最速km/h',
-            all.maxSpeed??'–', vsR.maxSpeed??'–', vsL.maxSpeed??'–', '#c084fc')}
         </tbody>
       </table>
+      {quickTimes.length>0&&(
+        <div style={{borderTop:'1px solid #334155',marginTop:10,paddingTop:10}}>
+          <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:6}}>
+            ⚡ クイックタイム（{quickTimes.length}件）
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,textAlign:'center'}}>
+            <div style={{background:'#0f172a',borderRadius:6,padding:'6px 4px'}}>
+              <div style={{fontSize:9,color:'#64748b',marginBottom:2}}>平均</div>
+              <div style={{fontSize:15,fontWeight:800,color:'#fbbf24',fontFamily:'monospace'}}>{qtAvg}</div>
+            </div>
+            <div style={{background:'#0f172a',borderRadius:6,padding:'6px 4px'}}>
+              <div style={{fontSize:9,color:'#64748b',marginBottom:2}}>最速</div>
+              <div style={{fontSize:15,fontWeight:800,color:'#4ade80',fontFamily:'monospace'}}>{qtMin}</div>
+            </div>
+            <div style={{background:'#0f172a',borderRadius:6,padding:'6px 4px'}}>
+              <div style={{fontSize:9,color:'#64748b',marginBottom:2}}>最遅</div>
+              <div style={{fontSize:15,fontWeight:800,color:'#f87171',fontFamily:'monospace'}}>{qtMax}</div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  // 球種別サマリーカード（割合・S率・MAX・平均速）
+  const ptSummaryCard=(()=>{
+    const activePts=PT.filter(pt=>all.ptC[pt.id]>0)
+      .sort((a,b)=>(all.ptC[b.id]||0)-(all.ptC[a.id]||0));
+    if(activePts.length===0) return null;
+    return (
+      <div className="card" style={{marginBottom:10}}>
+        <div style={{fontSize:14,fontWeight:800,color:'#e2e8f0',marginBottom:8}}>球種別サマリー</div>
+        <table style={tableStyle}>
+          <thead>
+            <tr style={{background:'#0f172a'}}>
+              <th style={{...cellHead,textAlign:'left'}}>球種</th>
+              <th style={cellHead}>割合</th>
+              <th style={cellHead}>S率</th>
+              <th style={cellHead}>MAX</th>
+              <th style={cellHead}>平均</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activePts.map(pt=>{
+              const count=all.ptC[pt.id]||0;
+              const pct=all.total>0?Math.round(count/all.total*100):0;
+              const sr=all.ptSR[pt.id];
+              const sPct=sr&&sr.t>0?Math.round(sr.k/sr.t*100):null;
+              const spd=speedDataMap[pt.id];
+              const sColor=sPct==null?'#475569':sPct>=65?'#22c55e':sPct>=50?'#eab308':'#f87171';
+              return (
+                <tr key={pt.id} style={{borderBottom:'1px solid #1e293b'}}>
+                  <td style={cellLabel}>
+                    <span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',
+                      background:pt.color,marginRight:5,verticalAlign:'middle'}}/>
+                    <span style={{color:pt.color,fontWeight:700,verticalAlign:'middle'}}>{pt.label}</span>
+                  </td>
+                  <td style={{...cellVal,fontWeight:700,color:'#e2e8f0'}}>
+                    {pct}%
+                    <span style={{fontSize:9,color:'#64748b',marginLeft:2}}>({count})</span>
+                  </td>
+                  <td style={{...cellVal,color:sColor,fontWeight:700}}>
+                    {sPct!=null?`${sPct}%`:'–'}
+                  </td>
+                  <td style={{...cellVal,color:'#a78bfa',fontWeight:700}}>
+                    {spd?spd.max:'–'}
+                  </td>
+                  <td style={{...cellVal,color:'#c084fc',fontWeight:700}}>
+                    {spd?spd.avg:'–'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{fontSize:10,color:'#64748b',marginTop:4}}>
+          S率：緑=65%以上　黄=50%以上　赤=50%未満
+        </div>
+      </div>
+    );
+  })();
 
   // 球種行（％バー + 3列）
   const ptCompareCard=(title, getValue, formatPct=true, subtitle)=>{
@@ -4360,8 +4506,8 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
     if(sortedPts.length===0) return null;
     return (
       <div className="card" style={{marginBottom:10}}>
-        <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:6}}>{title}</div>
-        {subtitle&&<div style={{fontSize:10,color:'#64748b',marginBottom:6}}>{subtitle}</div>}
+        <div style={{fontSize:14,fontWeight:800,color:'#e2e8f0',marginBottom:8}}>{title}</div>
+        {subtitle&&<div style={{fontSize:10,color:'#94a3b8',marginBottom:6}}>{subtitle}</div>}
         <table style={tableStyle}>
           <thead>{headRow}</thead>
           <tbody>
@@ -4400,8 +4546,8 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
           const r=getValue(vsR,pt),l=getValue(vsL,pt);
           return Math.abs((r.pct||0)-(l.pct||0))>=20;
         })&&(
-          <div style={{fontSize:9,color:'#fca5a5',marginTop:4}}>
-            ※ 赤背景=対右と対左で20pt以上の差（傾向あり）
+          <div style={{fontSize:10,color:'#fca5a5',marginTop:4}}>
+            ※ 赤背景=右打者・左打者で20pt以上の差
           </div>
         )}
       </div>
@@ -4443,21 +4589,21 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
   const countCard=(
     <div className="card" style={{marginBottom:10}}>
       <div style={{display:'flex',alignItems:'center',marginBottom:6}}>
-        <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>カウント別 球種割合</span>
+        <span style={{fontSize:14,fontWeight:800,color:'#e2e8f0'}}>カウント別 球種割合</span>
         <InfoBadge title="カウント別球種割合"
           body={'各カウント(B-S)ごとに、どの球種を何%投げたかの内訳。\n• 黄色背景=50%以上集中（読みやすい配球）\n• 表示は上位6球種・全打者2球以上のカウントのみ'}/>
       </div>
-      <div style={{overflowX:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:10}}>
+      <div style={{overflowX:'auto',paddingBottom:4}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
           <thead>
             <tr style={{background:'#0f172a'}}>
-              <th style={{padding:'4px 4px',textAlign:'left',color:'#94a3b8',fontSize:10,
-                borderBottom:'1px solid #334155',minWidth:46}}>カウント</th>
-              <th style={{padding:'4px 4px',textAlign:'right',color:'#94a3b8',fontSize:9,
+              <th style={{padding:'6px 6px',textAlign:'left',color:'#94a3b8',fontSize:12,
+                borderBottom:'1px solid #334155',minWidth:50}}>カウント</th>
+              <th style={{padding:'6px 6px',textAlign:'right',color:'#94a3b8',fontSize:11,
                 borderBottom:'1px solid #334155'}}>球数</th>
               {showPts.map(p=>(
-                <th key={p.id} style={{padding:'4px 3px',textAlign:'right',color:p.color,
-                  fontSize:10,fontWeight:700,borderBottom:'1px solid #334155'}}>
+                <th key={p.id} style={{padding:'6px 4px',textAlign:'right',color:p.color,
+                  fontSize:12,fontWeight:700,borderBottom:'1px solid #334155'}}>
                   {p.short}
                 </th>
               ))}
@@ -4466,17 +4612,17 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
           <tbody>
             {activeCounts.length===0?(
               <tr><td colSpan={showPts.length+2}
-                style={{padding:'10px',textAlign:'center',color:'#475569',fontSize:10}}>
+                style={{padding:'10px',textAlign:'center',color:'#475569',fontSize:12}}>
                 データ不足
               </td></tr>
             ):activeCounts.map(c=>{
               const v=all.countPtMix[c];
               return (
                 <tr key={c} style={{borderBottom:'1px solid #1e293b'}}>
-                  <td style={{padding:'4px 4px',fontWeight:700,color:'#cbd5e1',fontSize:11}}>
+                  <td style={{padding:'6px 6px',fontWeight:700,color:'#cbd5e1',fontSize:13}}>
                     {c}
                   </td>
-                  <td style={{padding:'4px 4px',textAlign:'right',color:'#64748b',fontSize:10}}>
+                  <td style={{padding:'6px 6px',textAlign:'right',color:'#64748b',fontSize:12}}>
                     {v.t}
                   </td>
                   {showPts.map(p=>{
@@ -4484,9 +4630,9 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
                     const pct=v.t>0?Math.round(cnt/v.t*100):0;
                     const isHigh=pct>=50;
                     return (
-                      <td key={p.id} style={{padding:'4px 3px',textAlign:'right',
+                      <td key={p.id} style={{padding:'6px 4px',textAlign:'right',
                         color:pct>0?p.color:'#475569',
-                        fontWeight:isHigh?900:700,fontSize:10,
+                        fontWeight:isHigh?900:700,fontSize:12,
                         background:isHigh?'rgba(234,179,8,.12)':'transparent'}}>
                         {pct>0?`${pct}%`:'–'}
                       </td>
@@ -4498,131 +4644,35 @@ function PitcherDetailPanel({allPitches, pitcherName, game}){
           </tbody>
         </table>
       </div>
-      <div style={{fontSize:9,color:'#64748b',marginTop:4}}>
-        ※ 黄色背景=50%超え / 全12カウント表示 / 上位6球種
+      <div style={{fontSize:10,color:'#64748b',marginTop:4}}>
+        ※ 黄色背景=50%以上集中　上位6球種を表示
       </div>
     </div>
   );
 
   return (
     <div>
-      <div style={{fontSize:11,color:'#64748b',marginBottom:8,
-        padding:'6px 10px',background:'#0f172a',borderRadius:6}}>
-        全打者 / 対右打者 / 対左打者 の3列で並列比較。右vs左で20pt以上の差は赤背景で強調。
-      </div>
+      {/* ── 球種別サマリー（割合・S率・MAX・平均） ── */}
+      {ptSummaryCard}
 
-      {summaryCard}
-      {ptCompareCard('球種割合', getPtMix, true)}
-
-      {/* 追加候補② 打球タイプ */}
-      <BattedBallTypeCard pitches={mine} role="pitcher"/>
-
-      {/* ── 球種別 MAX/平均球速 ── */}
-      <PitchSpeedCard pitches={mine}/>
-
-      {/* ── 球速推移グラフ ── */}
-      <VeloTrendChart pitches={mine}/>
+      {/* ── コース割合 ── */}
+      <ZoneRatioCard zoneC={zoneAll} total={all.total} pitches={mine}/>
 
       {/* ── 走者状況別の球種割合 ── */}
       <RunnerSituationCard pitches={mine} groups={byRunner}/>
-
-      {/* ── コース割合（ヒートマップ）── */}
-      <ZoneRatioCard zoneC={zoneAll} total={all.total} pitches={mine}/>
-
-      {ptCompareCard('球種別ストライク率', getPtSR, true,
-        '各球種でストライク判定された割合。()内=投球数')}
-      {ptCompareCard(`直球(ストレート/ツーシーム)被安打後の初球球種`, getAfterST, true,
-        `直球系を打たれた次打席の初球。(全${all.stTotal}回 / 対右${vsR.stTotal}回 / 対左${vsL.stTotal}回)`)}
-      {ptCompareCard(`変化球被安打後の初球球種`, getAfterBK, true,
-        `変化球(直球系以外)を打たれた次打席の初球。(全${all.bkTotal}回 / 対右${vsR.bkTotal}回 / 対左${vsL.bkTotal}回)`)}
-      {ptCompareCard(`四球後の初球球種`, getAfterBB, true,
-        `四死球の次打席の初球。(全${all.bbTotal}回 / 対右${vsR.bbTotal}回 / 対左${vsL.bbTotal}回)`)}
       {countCard}
+      {ptCompareCard(`直球被安打後の初球球種`, getAfterST, true,
+        `直球系を打たれた次打席の初球。(全${all.stTotal}回)`)}
+      {ptCompareCard(`変化球被安打後の初球球種`, getAfterBK, true,
+        `変化球を打たれた次打席の初球。(全${all.bkTotal}回)`)}
+      {ptCompareCard(`四球後の初球球種`, getAfterBB, true,
+        `四死球の次打席の初球。(全${all.bbTotal}回)`)}
 
-      {/* ── 傾向インサイト ── */}
-      <CountInsightCard pitches={mine}/>
+      {/* ── 打球タイプ ── */}
+      <BattedBallTypeCard pitches={mine} role="pitcher"/>
 
-      {/* クイックタイム */}
-      {quickTimes.length>0&&(()=>{
-        const fmtMs=ms=>{
-          const m=Math.floor(ms/60000), s=Math.floor((ms%60000)/1000), cs=Math.floor((ms%1000)/10);
-          return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
-        };
-        const msArr=quickTimes.map(t=>t.time);
-        const avg=Math.round(msArr.reduce((a,b)=>a+b,0)/msArr.length);
-        const mn=Math.min(...msArr), mx=Math.max(...msArr);
-        // 球種別に分割
-        const stTimes=quickTimes.filter(t=>!t.pitchType||t.pitchType==='st');
-        const offTimes=quickTimes.filter(t=>t.pitchType==='off');
-        const hasSplit=stTimes.length>0&&offTimes.length>0;
-        return (
-          <div className="card" style={{marginBottom:10}}>
-            <div style={{display:'flex',alignItems:'center',marginBottom:8}}>
-              <span style={{fontSize:12,fontWeight:700,color:'#fbbf24'}}>⚡ クイックタイム ({quickTimes.length}件)</span>
-            </div>
-            {/* 全体 avg/min/max */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,textAlign:'center',marginBottom:8}}>
-              <div>
-                <div style={{fontSize:18,fontWeight:800,color:'#fbbf24',fontFamily:'monospace'}}>{fmtMs(avg)}</div>
-                <div style={{fontSize:9,color:'#64748b',marginTop:2}}>平均（全体）</div>
-              </div>
-              <div>
-                <div style={{fontSize:18,fontWeight:800,color:'#4ade80',fontFamily:'monospace'}}>{fmtMs(mn)}</div>
-                <div style={{fontSize:9,color:'#64748b',marginTop:2}}>最速</div>
-              </div>
-              <div>
-                <div style={{fontSize:18,fontWeight:800,color:'#f87171',fontFamily:'monospace'}}>{fmtMs(mx)}</div>
-                <div style={{fontSize:9,color:'#64748b',marginTop:2}}>最遅</div>
-              </div>
-            </div>
-            {/* 球種別平均（データがある場合） */}
-            {(stTimes.length>0||offTimes.length>0)&&(
-              <div style={{display:'flex',gap:6,marginBottom:10}}>
-                {stTimes.length>0&&(
-                  <div style={{flex:1,textAlign:'center',padding:'6px 4px',
-                    background:'rgba(245,158,11,.1)',borderRadius:7,
-                    border:'1px solid rgba(245,158,11,.3)'}}>
-                    <div style={{fontSize:9,color:'#94a3b8',marginBottom:2}}>直球 ({stTimes.length}件)</div>
-                    <div style={{fontSize:15,fontWeight:800,fontFamily:'monospace',color:'#fbbf24'}}>
-                      {fmtMs(Math.round(stTimes.reduce((a,b)=>a+b.time,0)/stTimes.length))}
-                    </div>
-                  </div>
-                )}
-                {offTimes.length>0&&(
-                  <div style={{flex:1,textAlign:'center',padding:'6px 4px',
-                    background:'rgba(99,102,241,.1)',borderRadius:7,
-                    border:'1px solid rgba(99,102,241,.3)'}}>
-                    <div style={{fontSize:9,color:'#94a3b8',marginBottom:2}}>変化球 ({offTimes.length}件)</div>
-                    <div style={{fontSize:15,fontWeight:800,fontFamily:'monospace',color:'#a5b4fc'}}>
-                      {fmtMs(Math.round(offTimes.reduce((a,b)=>a+b.time,0)/offTimes.length))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {[...quickTimes].reverse().map((t,i)=>{
-              const c=t.time===mn?'#4ade80':t.time===mx?'#f87171':'#fbbf24';
-              return (
-                <div key={t.id} style={{display:'flex',alignItems:'center',gap:6,
-                  padding:'5px 0',borderBottom:i<quickTimes.length-1?'1px solid #0f172a':'none'}}>
-                  <span style={{fontSize:11,color:'#64748b',width:24}}>#{quickTimes.length-i}</span>
-                  {t.pitchType&&(
-                    <span style={{fontSize:9,padding:'1px 5px',borderRadius:4,fontWeight:700,
-                      background:t.pitchType==='st'?'rgba(245,158,11,.2)':'rgba(99,102,241,.2)',
-                      color:t.pitchType==='st'?'#fbbf24':'#a5b4fc'}}>
-                      {t.pitchType==='st'?'直球':'変化'}
-                    </span>
-                  )}
-                  <span style={{flex:1,fontSize:15,fontFamily:'monospace',fontWeight:700,color:c}}>{t.formatted}</span>
-                  <span style={{fontSize:10,color:'#475569'}}>
-                    {new Date(t.timestamp).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })()}
+      {/* ── 主要指標 ── */}
+      {summaryCard}
     </div>
   );
 }
@@ -4649,7 +4699,7 @@ function PitchSpeedCard({pitches}){
     return (
       <div className="card" style={{marginBottom:10}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:6}}>
-          <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>球種別 球速</span>
+          <span style={{fontSize:14,fontWeight:800,color:'#e2e8f0'}}>球種別 球速</span>
           <InfoBadge title="球種別球速"
             body={'各球種ごとの球数・平均球速・最速球速を表示。\n球速を入力していない投球は集計対象外。\n試合終盤の球速低下は疲労兆候。'}/>
         </div>
@@ -4729,7 +4779,7 @@ function RunnerSituationCard({pitches, groups}){
   if(activeGroups.length===0){
     return (
       <div className="card" style={{marginBottom:10}}>
-        <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:6}}>
+        <div style={{fontSize:14,fontWeight:800,color:'#e2e8f0',marginBottom:6}}>
           走者状況別の球種割合
         </div>
         <div style={{fontSize:11,color:'#475569',textAlign:'center',padding:8}}>
@@ -4755,7 +4805,7 @@ function RunnerSituationCard({pitches, groups}){
   return (
     <div className="card" style={{marginBottom:10}}>
       <div style={{display:'flex',alignItems:'center',marginBottom:6}}>
-        <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>走者状況別の球種割合</span>
+        <span style={{fontSize:14,fontWeight:800,color:'#e2e8f0'}}>走者状況別の球種割合</span>
         <InfoBadge title="走者状況別の球種割合"
           body={'走者の出塁状況ごとに球種の選び方が変わる傾向を可視化。\n• 走者なし: リスクなしの配球\n• 一塁: 盗塁警戒の配球\n• 得点圏: 失点リスク高、勝負球\n• 満塁: 安全策\n\n極端な偏り(20pt差以上は赤背景)があれば打者は読みやすい。'}/>
       </div>
@@ -4899,7 +4949,7 @@ function ZoneRatioCard({zoneC, total, pitches=[]}){
   return (
     <div className="card" style={{marginBottom:10}}>
       <div style={{display:'flex',alignItems:'center',marginBottom:6}}>
-        <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>コース割合(内/外・全{total}球)</span>
+        <span style={{fontSize:14,fontWeight:800,color:'#e2e8f0'}}>コース割合（{total}球）</span>
         <InfoBadge title="コース割合(内/外)"
           body={'打者視点での内コース・外コースの割合。\n真ん中(中央列)は集計から除外し、内外のみで比較。\n• 内角に集中→攻める投球\n• 外角に集中→慎重な投球\n• 打者の左右に応じて自動判定'}/>
       </div>
@@ -4907,9 +4957,9 @@ function ZoneRatioCard({zoneC, total, pitches=[]}){
       {/* 内/外 集計バー（真ん中は除外） */}
       {sideStats.total>0?(
         <div style={{marginBottom:8}}>
-          <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:5}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:5}}>
             <span style={{color:'#ef4444',fontWeight:800}}>内 {sideStats.insidePct}%</span>
-            <span style={{color:'#64748b',fontSize:10}}>{sideStats.total}球(内外のみ)</span>
+            <span style={{color:'#64748b',fontSize:11}}>{sideStats.total}球（内外のみ）</span>
             <span style={{color:'#3b82f6',fontWeight:800}}>外 {sideStats.outsidePct}%</span>
           </div>
           <div style={{display:'flex',height:22,borderRadius:6,overflow:'hidden',
@@ -4928,13 +4978,13 @@ function ZoneRatioCard({zoneC, total, pitches=[]}){
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
             <div style={{textAlign:'center',padding:'5px',background:'rgba(239,68,68,.1)',borderRadius:5,
               border:'1px solid rgba(239,68,68,.3)'}}>
-              <div style={{fontSize:9,color:'#fca5a5'}}>内コース</div>
-              <div style={{fontSize:15,fontWeight:900,color:'#ef4444'}}>{sideStats.inside}球</div>
+              <div style={{fontSize:10,color:'#fca5a5'}}>内コース</div>
+              <div style={{fontSize:16,fontWeight:900,color:'#ef4444'}}>{sideStats.inside}球</div>
             </div>
             <div style={{textAlign:'center',padding:'5px',background:'rgba(59,130,246,.1)',borderRadius:5,
               border:'1px solid rgba(59,130,246,.3)'}}>
-              <div style={{fontSize:9,color:'#93c5fd'}}>外コース</div>
-              <div style={{fontSize:15,fontWeight:900,color:'#3b82f6'}}>{sideStats.outside}球</div>
+              <div style={{fontSize:10,color:'#93c5fd'}}>外コース</div>
+              <div style={{fontSize:16,fontWeight:900,color:'#3b82f6'}}>{sideStats.outside}球</div>
             </div>
           </div>
         </div>
@@ -4973,8 +5023,8 @@ function ZoneRatioCard({zoneC, total, pitches=[]}){
           </div>
         ))}
       </div>
-      <div style={{fontSize:9,color:'#64748b',marginTop:4,textAlign:'center'}}>
-        太枠=ストライクゾーン / 内外は打者左右考慮（真ん中列は集計除外）
+      <div style={{fontSize:10,color:'#64748b',marginTop:4,textAlign:'center'}}>
+        太枠=ストライクゾーン　内/外は打者の左右で自動判定
       </div>
     </div>
   );
@@ -5000,7 +5050,7 @@ function BattedBallTypeCard({pitches, role='pitcher'}){
   if(stats.total===0){
     return (
       <div className="card" style={{marginBottom:10}}>
-        <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:6}}>打球タイプ</div>
+        <div style={{fontSize:14,fontWeight:800,color:'#e2e8f0',marginBottom:6}}>打球タイプ</div>
         <div style={{fontSize:11,color:'#475569',textAlign:'center',padding:8}}>
           打球データなし
         </div>
@@ -5020,7 +5070,7 @@ function BattedBallTypeCard({pitches, role='pitcher'}){
   return (
     <div className="card" style={{marginBottom:10}}>
       <div style={{display:'flex',alignItems:'center',marginBottom:6}}>
-        <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>{title}</span>
+        <span style={{fontSize:14,fontWeight:800,color:'#e2e8f0'}}>{title}</span>
         <InfoBadge title="打球タイプ" body={helpBody}/>
       </div>
       {/* 積み上げ横バー */}
@@ -5296,11 +5346,11 @@ function PitcherTimelineCard({game, pitches}){
 }
 
 // テーブル共通スタイル
-const tableStyle={width:'100%',borderCollapse:'collapse',fontSize:11};
-const cellHead={padding:'4px 6px',color:'#94a3b8',fontWeight:600,fontSize:10,
+const tableStyle={width:'100%',borderCollapse:'collapse',fontSize:12};
+const cellHead={padding:'5px 6px',color:'#94a3b8',fontWeight:700,fontSize:11,
   textAlign:'center',borderBottom:'1px solid #334155'};
-const cellLabel={padding:'5px 6px',color:'#cbd5e1',fontSize:11,textAlign:'left',width:'40%'};
-const cellVal={padding:'5px 6px',textAlign:'center',fontSize:11};
+const cellLabel={padding:'6px 6px',color:'#cbd5e1',fontSize:12,textAlign:'left',width:'40%'};
+const cellVal={padding:'6px 6px',textAlign:'center',fontSize:12};
 
 // ── Analysis Filter Defaults ──
 const DEFAULT_FILTERS={
@@ -5380,7 +5430,7 @@ function AnalysisScreen({game,pitches,onBack}){
   // 集計（filtered ベース）
   const total=filtered.length;
   const grandTotal=nonPickoff.length;
-  const strikes=useMemo(()=>filtered.filter(p=>{const cat=RESULT_CAT_MAP[p.result];return cat==='strike'||cat==='so';}).length,[filtered]);
+  const strikes=useMemo(()=>filtered.filter(p=>isStrikeResult(p.result)).length,[filtered]);
   const sRate=total>0?Math.round(strikes/total*100):0;
   const ptC=useMemo(()=>{const c={};PT.forEach(p=>{c[p.id]=filtered.filter(x=>x.pt===p.id).length;});return c;},[filtered]);
   const resC=useMemo(()=>{const c={};ALL_RESULTS.forEach(r=>{c[r.id]=filtered.filter(x=>x.result===r.id).length;});return c;},[filtered]);
@@ -5393,8 +5443,8 @@ function AnalysisScreen({game,pitches,onBack}){
       if(!s[name]) s[name]={name,total:0,strikes:0,so:0,hits:0,bb:0,outs:0,balls:0};
       const cat=RESULT_CAT_MAP[p.result];
       s[name].total++;
-      if(cat==='strike') s[name].strikes++;
-      else if(cat==='so'){s[name].so++;s[name].strikes++;}
+      if(isStrikeResult(p.result)) s[name].strikes++;
+      if(cat==='so') s[name].so++;
       else if(cat==='hit') s[name].hits++;
       else if(cat==='bb') s[name].bb++;
       else if(cat==='out'||cat==='sac') s[name].outs++;
@@ -5424,7 +5474,7 @@ function AnalysisScreen({game,pitches,onBack}){
       const ABS=['walk','hbp','single','double','double_adv','triple','hr','looking','swinging',
         'if_go','if_fly','of_fly','if_liner','of_liner','bunt_fly','safety_out',
         'sac_bunt','sac_fly','bat_int','def_int',
-        'if_go_err','if_fly_err','of_fly_err','bunt_err',
+        'if_go_err','if_fly_err','of_fly_err','bunt_err','fc','dp_broken','uncaught_k','throw_err','obstruction','infield_fly','force_home','inside_hr','ground_rule_2b','ibb',
         'dp_643','dp_463','dp_543','dp_563','dp_663','dp_143','dp_163','dp_363','dp_443','dp_553','dp_263','dp_243',
         'dp_liner','dp_fly','dp_bunt','dp_so_steal','dp_so_throw','dp_other','tp_other'];
       let abCount=0,hits=0,so=0,bb=0;
@@ -5432,9 +5482,9 @@ function AnalysisScreen({game,pitches,onBack}){
         const last=ab[ab.length-1];
         if(last && ABS.includes(last.result)){
           abCount++;
-          if(['single','double','double_adv','triple','hr'].includes(last.result)) hits++;
+          if(['single','double','double_adv','ground_rule_2b','triple','hr','inside_hr'].includes(last.result)) hits++;
           if(['looking','swinging','dp_so_steal','dp_so_throw'].includes(last.result)) so++;
-          if(['walk','hbp'].includes(last.result)) bb++;
+          if(['walk','hbp','ibb'].includes(last.result)) bb++;
         }
       });
       return {name:b.name,pitches:b.pitches,abCount,hits,so,bb,hand:b.hand};
@@ -5446,7 +5496,7 @@ function AnalysisScreen({game,pitches,onBack}){
   const emptyMsg=hasFilter?'フィルター条件に該当する投球なし':'記録なし';
 
   return (
-    <div className="screen">
+    <div className="screen" style={{paddingBottom:40}}>
       <div className="header">
         <button className="btn btn-secondary btn-sm" onClick={onBack}>← 戻る</button>
         <h2>分析</h2>
@@ -5639,7 +5689,7 @@ function AnalysisScreen({game,pitches,onBack}){
                 if(!byInn[k]) byInn[k]={inning:p.inning,tb:p.topBottom,t:0,s:0,h:0,bb:0,so:0};
                 byInn[k].t++;
                 const cat=RESULT_CAT_MAP[p.result];
-                if(cat==='strike'||cat==='so') byInn[k].s++;
+                if(isStrikeResult(p.result)) byInn[k].s++;
                 if(cat==='hit') byInn[k].h++;
                 if(cat==='bb') byInn[k].bb++;
                 if(cat==='so') byInn[k].so++;
@@ -5680,9 +5730,9 @@ function AnalysisScreen({game,pitches,onBack}){
       {/* ── 配球シーケンス予測 ── */}
       {tab==='seq'&&(
         <div>
-          <div style={{fontSize:11,color:'#64748b',marginBottom:8,padding:'6px 10px',
+          <div style={{fontSize:12,color:'#94a3b8',marginBottom:8,padding:'8px 10px',
             background:'#1e293b',borderRadius:6,display:'flex',alignItems:'center'}}>
-            <span> 投手の球種パターン傾向。初球の選択・前球からの遷移確率を表示</span>
+            <span>投手の球種パターン傾向。初球の選択・前球からの遷移確率を表示</span>
             <InfoBadge title="配球シーケンス予測"
               body={'初球の球種傾向と、ある球種の「次に何を投げるか」の確率を表示。\n例「直球後 → スライダー 65%」=直球の後はスライダーが65%の確率。\n• 投手の「決まったパターン」を発見できる\n• 打者は次の球種を予測しやすくなる\n• 6回以降に傾向が変わる投手もいる'}/>
           </div>
@@ -5709,7 +5759,7 @@ function AnalysisScreen({game,pitches,onBack}){
       {tab==='spray'&&(
         <div className="card">
           <div style={{display:'flex',alignItems:'center',marginBottom:8}}>
-            <span style={{fontSize:13,fontWeight:700,color:'#94a3b8'}}> 打球分布（スプレーチャート）</span>
+            <span style={{fontSize:14,fontWeight:800,color:'#e2e8f0'}}>打球分布（スプレーチャート）</span>
             <InfoBadge title="スプレーチャート"
               body={'打球を野手位置にプロット。\n• 引っ張り打ち中心？流し打ち中心？\n• 外野フライが特定方向に偏る打者は守備シフトの対象\n• 内野ゴロが多い投手はゴロ型、外野フライが多いとフライ型'}/>
           </div>
@@ -6038,6 +6088,24 @@ function HistoryScreen({pitches,onBack,onPitchEdit,undoStack,onUndo}){
   const [mode,setMode]=useState('chrono'); // 'chrono'(球順) | 'batter'(打者別)
   const sorted=[...pitches].sort((a,b)=>b.timestamp-a.timestamp);
 
+  // 保留進塁を投球に紐付け: pt=nullかつzone=nullの進塁レコードを直後の投球に対応づける
+  const {linkedAdvMap, linkedAdvIds} = useMemo(()=>{
+    const advances=pitches.filter(p=>p.isAdvance && !p.pt && !p.zone);
+    const regular =pitches.filter(p=>!p.isAdvance && !p.isPickoff);
+    const advMap={}; // pitchId → advancePitch
+    const usedIds=new Set();
+    regular.forEach(pitch=>{
+      const linked=advances.find(a=>
+        !usedIds.has(a.id) &&
+        a.atBat===pitch.atBat &&
+        pitch.timestamp - a.timestamp >= 0 &&
+        pitch.timestamp - a.timestamp <= 200
+      );
+      if(linked){ advMap[pitch.id]=linked; usedIds.add(linked.id); }
+    });
+    return {linkedAdvMap:advMap, linkedAdvIds:new Set(Object.values(advMap).map(a=>a.id))};
+  },[pitches]);
+
   // ② 打者別グループ化: atBat単位で集約
   const atBatGroups=useMemo(()=>{
     const m={};
@@ -6060,7 +6128,7 @@ function HistoryScreen({pitches,onBack,onPitchEdit,undoStack,onUndo}){
     const ABS=['walk','hbp','single','double','double_adv','triple','hr','looking','swinging',
       'if_go','if_fly','of_fly','if_liner','of_liner','bunt_fly','safety_out',
       'sac_bunt','sac_fly','bat_int','def_int',
-      'if_go_err','if_fly_err','of_fly_err','bunt_err',
+      'if_go_err','if_fly_err','of_fly_err','bunt_err','fc','dp_broken','uncaught_k','throw_err','obstruction','infield_fly','force_home','inside_hr','ground_rule_2b','ibb',
       'dp_643','dp_463','dp_543','dp_563','dp_663','dp_143','dp_163','dp_363','dp_443','dp_553','dp_263','dp_243',
       'dp_liner','dp_fly','dp_bunt','dp_so_steal','dp_so_throw','dp_other','tp_other'];
     Object.values(m).forEach(g=>{
@@ -6093,12 +6161,20 @@ function HistoryScreen({pitches,onBack,onPitchEdit,undoStack,onUndo}){
       {mode==='chrono'&&sorted.length>0&&(
         <div className="card">
           {sorted.map((p,i)=>{
+            // 投球に紐付いた進塁行は単独表示しない
+            if(linkedAdvIds.has(p.id)) return null;
             const ptInfo=p.pt?(PT.find(x=>x.id===p.pt)):null;
             const resInfo=ALL_RESULTS.find(x=>x.id===p.result);
-            // 作戦/進塁イベント判定
             const isAdv=p.isAdvance;
             const opacity=p.isPickoff?0.65:(isAdv?0.75:1);
             const advLabels={steal:'盗塁',double_steal:'ダブルスチール',delayed:'ディレード',hitrun:'エンドラン',pb:'PB',wp:'WP',tag_out:'刺殺',caught_stealing:'盗塁死'};
+            // この投球に紐付いた進塁イベント
+            const linked=linkedAdvMap[p.id];
+            const linkedColor={
+              steal:'#22d3ee',double_steal:'#22d3ee',delayed:'#22d3ee',hitrun:'#67e8f9',
+              pb:'#94a3b8',wp:'#94a3b8',
+              caught_stealing:'#f87171',tag_out:'#f87171',
+            }[linked?.result]||'#67e8f9';
             return (
               <div key={p.id} className="history-item" style={{opacity}}>
                 <span style={{fontSize:12,color:'#475569',width:22,flexShrink:0,textAlign:'center'}}>{sorted.length-i}</span>
@@ -6108,9 +6184,18 @@ function HistoryScreen({pitches,onBack,onPitchEdit,undoStack,onUndo}){
                   ? <span style={{fontSize:11,padding:'2px 6px',borderRadius:4,background:'rgba(6,182,212,.18)',color:'#67e8f9',fontWeight:700,flexShrink:0}}>作</span>
                   : <PitchDot ptId={p.pt} size={18}/>}
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:600}}>
-                    {p.isPickoff?'牽制':isAdv?(advLabels[p.result]||p.result):ptInfo?.label||'-'}
-                    {p.speed&&!isAdv&&<span style={{fontSize:10,color:'#c084fc',marginLeft:5}}>{p.speed}km/h</span>}
+                  <div style={{fontSize:13,fontWeight:600,display:'flex',alignItems:'center',flexWrap:'wrap',gap:4}}>
+                    <span>{p.isPickoff?'牽制':isAdv?(advLabels[p.result]||p.result):ptInfo?.label||'-'}</span>
+                    {p.speed&&!isAdv&&<span style={{fontSize:10,color:'#c084fc'}}>{p.speed}km/h</span>}
+                    {linked&&(
+                      <span style={{fontSize:10,fontWeight:800,color:linkedColor,
+                        padding:'1px 7px',borderRadius:10,
+                        background:`${linkedColor}22`,
+                        border:`1px solid ${linkedColor}66`,
+                        flexShrink:0}}>
+                        {advLabels[linked.result]||linked.result}
+                      </span>
+                    )}
                   </div>
                   <div style={{fontSize:11,color:'#64748b',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                     {p.inning}回{p.topBottom==='top'?'表':'裏'}
@@ -6485,8 +6570,9 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
     const speedNum=currentSpeed?parseInt(currentSpeed,10):null;
     const isAdvance = result==='steal'||result==='delayed'||result==='hitrun'||
                       result==='double_steal'||
-                      result==='pb'||result==='wp'||result==='tag_out'||
-                      result==='caught_stealing';
+                      result==='pb'||result==='wp'||result==='balk'||
+                      result==='tag_out'||result==='caught_stealing'||
+                      result==='overrun';
     const ac=lineup.length||9;
 
     // gs更新ヘルパー
@@ -6759,6 +6845,24 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
     await dbPut('games',{...game,gs:newGs});
   },[game,setGs]);
 
+  // イニングジャンプ: スコアボードのイニングセルから呼び出し
+  const handleInningSelect=useCallback(async(inning,tb)=>{
+    const teamKey=tb==='top'?'currentBatterOrderAway':'currentBatterOrderHome';
+    const newGs={
+      ...gs,
+      inning,
+      topBottom:tb,
+      outs:0,
+      runners:{first:false,second:false,third:false},
+      count:{balls:0,strikes:0},
+      currentAtBat:genId(),
+      [teamKey]:gs[teamKey]??gs.currentBatterOrder??1,
+      pitchCount:(gs.pitchCount||0),
+    };
+    setGs(newGs);
+    await dbPut('games',{...game,gs:newGs});
+  },[gs,game,setGs]);
+
   // ④ 打者ナビ: 前/次の打者へ移動（カウントとatBatもリセット）③現攻撃チームの打順だけ変更
   const navBatter=useCallback(async(dir)=>{
     const ac=lineup.length||9;
@@ -6990,19 +7094,13 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
               const g={...game,lineScoreManual:manual};
               await dbPut('games',g);
               onGameUpdate?.(g);
-            }}/>
+            }}
+            onInningSelect={handleInningSelect}/>
         </div>
       )}
 
       {/* ── ライブダッシュボード（ゾーン選択中のみ表示）── */}
       {step==='zone'&&<LiveDashboard pitches={pitches} currentPitcher={currentPitcher} gs={gs}/>}
-
-      {/* ── 音声入力（ゾーン選択中のみ表示）── */}
-      {step==='zone'&&(
-        <div style={{display:'flex',justifyContent:'flex-end',marginBottom:5}}>
-          <VoiceInputButton onCommand={handleVoice} enabled={true}/>
-        </div>
-      )}
 
       {/* ── 球速エディタ: ゾーン選択後・球種選択ステップでのみ表示 ── */}
       {pZone && step==='pt' && (
@@ -7085,9 +7183,9 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
                     </button>
                   ))}
                 </div>
-                {/* 即時記録（走者アウト） */}
+                {/* 保留（走者アウト） */}
                 <div style={{fontSize:9,color:'#fca5a5',fontWeight:700,marginBottom:4}}>
-                  ✕ 走者アウト（即時記録）
+                  ✕ 走者アウト（投球と同時に記録・保留）
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}}>
                   {[
@@ -7095,7 +7193,7 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
                     {id:'tag_out',         l:'刺殺(走塁)'},
                   ].map(t=>(
                     <button key={t.id}
-                      onClick={()=>handleRecordTactic(t.id)}
+                      onClick={()=>handleSetPending(t.id)}
                       style={{padding:'8px 4px',borderRadius:6,border:'1.5px solid #ef4444',
                         background:'#3f0a0a',color:'#fca5a5',fontSize:11,fontWeight:700,
                         cursor:'pointer',fontFamily:'inherit',lineHeight:1.2}}>
@@ -7165,6 +7263,15 @@ function InputScreen({game,pitches,gs,setGs,onNav,refreshPitches,onGameUpdate,
           pZone={pZone} pPt={pPt} gs={gs}
           onBack={()=>setStep('pt')}
           onSelect={(rid)=>{
+            // タイブレーク: 走者を一括セットして打席継続(投球は記録しない)
+            if(rid==='tiebreak_12'||rid==='tiebreak_23'){
+              const newRunners=rid==='tiebreak_12'
+                ?{first:true,second:true,third:false}
+                :{first:false,second:true,third:true};
+              updateGsManually({...gs,runners:newRunners});
+              setStep('zone');
+              return;
+            }
             // ② 走者選択が必要な作戦・走塁アウトはハンドラ経由
             if(NEEDS_RUNNER_SEL.has(rid)){
               handleAdvanceWithRunner(rid);
@@ -8928,7 +9035,7 @@ function App(){
       onNav={nav} refreshPitches={refreshPitches} onGameUpdate={setGame}
       undoStack={undoStack} setUndoStack={setUndoStack} undoPitch={undoPitch}/>;
   if(screen==='lineup')
-    return <LineupScreen game={game} onBack={()=>setScreen('input')}/>;
+    return <LineupScreen game={game} onBack={()=>setScreen('input')} onGameUpdate={setGame}/>;
   if(screen==='analysis')
     return <AnalysisScreen game={game} pitches={pitches} onBack={()=>setScreen('input')}/>;
   if(screen==='history')
